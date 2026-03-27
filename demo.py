@@ -31,7 +31,8 @@ from pikabar.animator import animate, animate_unified
 
 # Simulated session data for demo (real data comes from Claude Code JSON)
 DEMO_SESSION = {
-    "model": "claude-opus-4",
+    "model_id": "claude-opus-4-6",
+    "model_name": "Opus",
     "branch": "main",
     "staged": 2,
     "modified": 1,

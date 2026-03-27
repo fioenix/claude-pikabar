@@ -50,26 +50,27 @@ def _build(sprite_lines, info, above=None, sides=None, below=None):
 # Model display
 # ============================================================
 
-def format_model(model_name):
-    """Format model as 'Lv.N MODEL' (Pokemon style).
+def format_model(model_id="", display_name=""):
+    """Format model as 'Lv.N SPECIES' (Pokemon style).
 
-    Extracts the first number from the model version as the level.
-    Example: 'claude-opus-4' -> 'Lv.4 OPUS'
+    Uses display_name for species (e.g. "Opus" -> "OPUS")
+    and model_id for level (e.g. "claude-opus-4-6" -> first digit = 4).
+
+    Claude Code JSON provides:
+      model.id = "claude-opus-4-6"
+      model.display_name = "Opus"
     """
-    name_upper = model_name.upper()
-    # Extract species
-    species = "CLAUDE"
-    for s in ["OPUS", "SONNET", "HAIKU"]:
-        if s in name_upper:
-            species = s
-            break
-
-    # Extract level from version number
-    level = "?"
     import re
-    nums = re.findall(r'\d+', model_name)
-    if nums:
-        level = nums[-1]  # last number is usually the version
+
+    # Species from display_name (already clean: "Opus", "Sonnet", "Haiku")
+    species = display_name.upper() if display_name else "CLAUDE"
+
+    # Level from model_id version number
+    level = "?"
+    # Match pattern like "opus-4", "sonnet-4", "sonnet-3-5", "haiku-3-5"
+    match = re.search(r'(?:opus|sonnet|haiku)-(\d+)', model_id.lower())
+    if match:
+        level = match.group(1)
 
     return f"{fg(GOLD)}{BOLD}Lv.{level}{RST} {fg(GOLD)}{species}{RST}"
 
@@ -107,7 +108,7 @@ def decorate_thinking(sprite_lines, tick, session=None):
     s = session or {}
     dots = "." * ((tick % 3) + 1)
 
-    model = format_model(s.get("model", "opus-4"))
+    model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
     badge = get_badge(s.get("hp_pct"), is_compacting=False)
     git = format_git(s.get("branch"), s.get("staged", 0), s.get("modified", 0))
     hp = render_hp_line(s.get("hp_pct"), s.get("hp_window"), tick=tick)
@@ -131,7 +132,7 @@ def decorate_streaming(sprite_lines, tick, session=None):
     """Streaming state: winking eye, text output."""
     s = session or {}
 
-    model = format_model(s.get("model", "opus-4"))
+    model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
     badge = get_badge(s.get("hp_pct"))
     git = format_git(s.get("branch"), s.get("staged", 0), s.get("modified", 0))
     hp = render_hp_line(s.get("hp_pct"), s.get("hp_window"), tick=tick)
@@ -159,7 +160,7 @@ def decorate_tool(sprite_lines, tick, session=None):
                              "Edit utils.ts", "Bash: npm test"])
     tool = tools[tick % len(tools)] if tools else "Working..."
 
-    model = format_model(s.get("model", "opus-4"))
+    model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
     badge = get_badge(s.get("hp_pct"))
     git = format_git(s.get("branch"), s.get("staged", 0), s.get("modified", 0))
     hp = render_hp_line(s.get("hp_pct"), s.get("hp_window"), tick=tick)
@@ -209,7 +210,7 @@ def decorate_subagent(sprite_lines, tick, session=None):
     hc = hc_list[tick % len(hc_list)]
     h = f"{fg(hc)}♥{RST}"
 
-    model = format_model(s.get("model", "opus-4"))
+    model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
     badge = get_badge(s.get("hp_pct"))
     hp = render_hp_line(s.get("hp_pct"), s.get("hp_window"), tick=tick)
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
@@ -246,7 +247,7 @@ def decorate_compact(sprite_lines, tick, session=None):
     """Compacting state: sleeping Pikachu with ZZZ."""
     s = session or {}
 
-    model = format_model(s.get("model", "opus-4"))
+    model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
     badge = get_badge(s.get("hp_pct"), is_compacting=True)
     hp = render_hp_line(s.get("hp_pct"), s.get("hp_window"), tick=tick)
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
@@ -291,7 +292,7 @@ def decorate_ratelimit(sprite_lines, tick, session=None):
     s = session or {}
     mins = s.get("retry_min", max(1, 4 - (tick // 6)))
 
-    model = format_model(s.get("model", "opus-4"))
+    model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
     badge = get_badge(0, is_rate_limited=True)  # HP=0 when rate limited
     hp = render_hp_line(0, s.get("hp_window"), tick=tick)  # HP = 0
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
