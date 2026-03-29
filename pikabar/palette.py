@@ -58,3 +58,9 @@ def UP(n):
 def COL(n):
     """Move cursor to absolute column n."""
     return f"\033[{n}G"
+
+
+def visible_len(s):
+    """Count visible characters in an ANSI-escaped string."""
+    import re
+    return len(re.sub(r'\033\[[^m]*m', '', s))

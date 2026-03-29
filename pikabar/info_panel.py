@@ -1,53 +1,30 @@
-"""Info panel layout — the right-side display next to the sprite.
+"""Info panel layout — Pokemon-style statusline display.
 
-Layout (5 decorated lines):
-  Line 0: effects (above sprite)          [badge if any]
-  Line 1: [sprite]  Lv.N MODEL | branch +staged ~modified
-  Line 2: [sprite]  HP ████████████░░░░ 72% 5h
-  Line 3: [sprite]  P$0.42 3m12s | > flavor text
-  Line 4: effects (below) or retry info
+Layout (5 lines, info-above-sprite):
+  Line 0: Lv.N MODEL [badge] | branch +staged ~modified
+  Line 1: HP ############.... 72% 5h  P$0.42 3m12s  > flavor
+  Line 2: [sprite line 0]  [effects]
+  Line 3: [sprite line 1]  [effects]
+  Line 4: [sprite line 2]  [effects]
+
+Info lines (0-1) are pure ASCII/ANSI text — guaranteed alignment.
+Sprite lines (2-4) use half-block Unicode — may render wider in some
+terminals but no text alignment depends on them.
 """
 
-from .palette import fg, bg, RST, BOLD, SUBTLE, DIM, GOLD, GREEN, RD, COL
+from .palette import fg, bg, RST, BOLD, SUBTLE, DIM, GOLD, GREEN, RD
 from .hp_bar import render_hp_line, get_badge, hp_color
 from .flavor import get_flavor_text
 
-# Absolute column where info text starts (right of sprite zone)
-INFO_COL = 28
+# Minimum output lines (padded if fewer). Demo = 5, statusline = 6 (with backdrop padding).
+MIN_LINES = 5
 
-# All states must produce exactly this many lines
-DECORATED_LINES = 5
-
-
-def _line(sprite, info_str, above_str=None, right_eff=""):
-    """Build one output line with two-zone layout.
-
-    Zone 1 (cols 1-INFO_COL): sprite + floating effects
-    Zone 2 (col INFO_COL+): info text, pinned via absolute positioning
-    """
-    if above_str is not None:
-        return f"  {above_str}{COL(INFO_COL)}{RST}"
-    return f"  {sprite}{right_eff}{COL(INFO_COL)}{info_str}"
-
-
-def _build(sprite_lines, info, above=None, sides=None, below=None):
-    """Standard builder: above + sprite rows + padding = DECORATED_LINES."""
-    lines = []
-    lines.append(_line(None, "", above_str=(above or "")))
-    for i, sp in enumerate(sprite_lines):
-        inf = info[i] if i < len(info) else ""
-        eff = sides[i] if sides and i < len(sides) else ""
-        lines.append(_line(sp, inf, right_eff=eff))
-    # Below line (for rate limited retry info, etc.)
-    if below:
-        lines.append(f"{COL(INFO_COL)}{below}")
-    while len(lines) < DECORATED_LINES:
-        lines.append("")
-    return lines[:DECORATED_LINES]
+# Sprite prefix (indentation for non-backdrop mode)
+SP = "  "
 
 
 # ============================================================
-# Model display
+# Model / git / cost formatters
 # ============================================================
 
 def format_model(model_id="", display_name=""):
@@ -62,8 +39,9 @@ def format_model(model_id="", display_name=""):
     """
     import re
 
-    # Species from display_name (already clean: "Opus", "Sonnet", "Haiku")
-    species = display_name.upper() if display_name else "CLAUDE"
+    # Species from display_name — take first word only
+    # Claude Code sends "Opus 4.6 (1M context)", we just want "OPUS"
+    species = display_name.split()[0].upper() if display_name else "CLAUDE"
 
     # Level from model_id version number
     level = "?"
@@ -100,13 +78,38 @@ def format_cost_time(cost_usd=0.0, duration_secs=0):
 
 
 # ============================================================
+# Layout builder
+# ============================================================
+
+def _build(info_line0, info_line1, sprite_lines, sides=None):
+    """Standard builder: 2 info lines + N sprite lines.
+
+    Args:
+        info_line0: First info line (model, badge, git)
+        info_line1: Second info line (HP, cost, flavor)
+        sprite_lines: List of rendered sprite terminal lines (3 for demo, 4 with padding)
+        sides: Optional list of side effects per sprite line
+    """
+    lines = []
+    # Info lines (pure text, no half-blocks)
+    lines.append(f"{SP}{info_line0}")
+    lines.append(f"{SP}{info_line1}")
+    # Sprite lines (SP indents the whole sprite/backdrop block)
+    for i, sp in enumerate(sprite_lines):
+        eff = sides[i] if sides and i < len(sides) else ""
+        lines.append(f"{SP}{sp}{eff}")
+    while len(lines) < MIN_LINES:
+        lines.append("")
+    return lines
+
+
+# ============================================================
 # Decoration functions per state
 # ============================================================
 
 def decorate_thinking(sprite_lines, tick, session=None):
     """Thinking state: eyes glance, gentle tail sway."""
     s = session or {}
-    dots = "." * ((tick % 3) + 1)
 
     model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
     badge = get_badge(s.get("hp_pct"), is_compacting=False)
@@ -115,17 +118,15 @@ def decorate_thinking(sprite_lines, tick, session=None):
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
 
     flavor, _ = get_flavor_text("thinking", s.get("hp_pct"), tick=tick)
-    flavor_str = f" {fg(DIM)}│{RST} {fg(SUBTLE)}▶ {flavor}{RST}" if flavor else ""
+    flavor_str = f"  {fg(DIM)}>{RST} {fg(SUBTLE)}{flavor}{RST}" if flavor else ""
 
     badge_str = f" {badge}" if badge else ""
-    git_str = f" {fg(DIM)}│{RST} {git}" if git else ""
+    git_str = f" {fg(DIM)}|{RST} {git}" if git else ""
 
-    info = [
-        f"{model}{badge_str}{git_str}",
-        hp,
-        f"{cost_time}{flavor_str}",
-    ]
-    return _build(sprite_lines, info)
+    line0 = f"{model}{badge_str}{git_str}"
+    line1 = f"{hp}  {cost_time}{flavor_str}"
+
+    return _build(line0, line1, sprite_lines)
 
 
 def decorate_streaming(sprite_lines, tick, session=None):
@@ -139,21 +140,19 @@ def decorate_streaming(sprite_lines, tick, session=None):
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
 
     flavor, _ = get_flavor_text("streaming", s.get("hp_pct"), tick=tick)
-    flavor_str = f" {fg(DIM)}│{RST} {fg(GREEN)}▍{RST}{fg(SUBTLE)}{flavor}{RST}" if flavor else f" {fg(DIM)}│{RST} {fg(GREEN)}▍{RST}{fg(SUBTLE)}Streaming...{RST}"
+    flavor_str = f"  {fg(DIM)}|{RST} {fg(GREEN)}>{RST}{fg(SUBTLE)} {flavor}{RST}" if flavor else f"  {fg(DIM)}|{RST} {fg(GREEN)}>{RST}{fg(SUBTLE)} Streaming...{RST}"
 
     badge_str = f" {badge}" if badge else ""
-    git_str = f" {fg(DIM)}│{RST} {git}" if git else ""
+    git_str = f" {fg(DIM)}|{RST} {git}" if git else ""
 
-    info = [
-        f"{model}{badge_str}{git_str}",
-        hp,
-        f"{cost_time}{flavor_str}",
-    ]
-    return _build(sprite_lines, info)
+    line0 = f"{model}{badge_str}{git_str}"
+    line1 = f"{hp}  {cost_time}{flavor_str}"
+
+    return _build(line0, line1, sprite_lines)
 
 
 def decorate_tool(sprite_lines, tick, session=None):
-    """Tool Use state: lightning bolts ⚡ around sprite."""
+    """Tool Use state: lightning bolts around sprite."""
     s = session or {}
 
     tools = s.get("tools", ["Read src/app.ts", "Grep 'handleError'",
@@ -167,40 +166,29 @@ def decorate_tool(sprite_lines, tick, session=None):
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
 
     badge_str = f" {badge}" if badge else ""
-    git_str = f" {fg(DIM)}│{RST} {git}" if git else ""
+    git_str = f" {fg(DIM)}|{RST} {git}" if git else ""
 
-    info = [
-        f"{model}{badge_str}{git_str}",
-        hp,
-        f"{cost_time} {fg(DIM)}│{RST} {fg(GOLD)}⚡{RST} {fg(SUBTLE)}{tool[:25]}{RST}",
-    ]
+    line0 = f"{model}{badge_str}{git_str}"
+    line1 = f"{hp}  {cost_time}  {fg(DIM)}|{RST} {fg(GOLD)}!{RST} {fg(SUBTLE)}{tool[:25]}{RST}"
 
-    # Lightning effects
+    # Lightning effects next to sprite
     bc_list = [220, 178, 228, 220]
     bc = bc_list[tick % len(bc_list)]
-    b = f"{fg(bc)}⚡{RST}"
-
-    above_patterns = [
-        f"       {b}     {b}",
-        f"    {b}          {b}",
-        f"         {b}  {b}",
-        f"   {b}    {b}      {b}",
-    ]
-    above = above_patterns[tick % len(above_patterns)]
+    b = f"{fg(bc)}*{RST}"
 
     side_patterns = [
-        ["",     f" {b}",  ""],
-        [f" {b}", "",      f" {b}"],
-        ["",     f" {b}",  f" {b}"],
+        [f" {b}",  "",     f" {b}"],
+        ["",      f" {b}", ""],
         [f" {b}", f" {b}", ""],
+        ["",      "",      f" {b}"],
     ]
     sides = side_patterns[tick % len(side_patterns)]
 
-    return _build(sprite_lines, info, above=above, sides=sides)
+    return _build(line0, line1, sprite_lines, sides=sides)
 
 
 def decorate_subagent(sprite_lines, tick, session=None):
-    """Subagent state: hearts ♥ floating around sprite."""
+    """Subagent state: hearts floating around sprite."""
     s = session or {}
     n_agents = s.get("n_agents", 3)
     agents = s.get("agent_names", ["Dev", "QC", "UX"])
@@ -208,29 +196,18 @@ def decorate_subagent(sprite_lines, tick, session=None):
 
     hc_list = [RD, 204, 197, 203]
     hc = hc_list[tick % len(hc_list)]
-    h = f"{fg(hc)}♥{RST}"
+    h = f"{fg(hc)}<3{RST}"
 
     model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
     badge = get_badge(s.get("hp_pct"))
     hp = render_hp_line(s.get("hp_pct"), s.get("hp_window"), tick=tick)
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
 
-    hearts = f"{fg(RD)}{'♥ ' * n_agents}{RST}"
+    hearts = f"{fg(RD)}{'<3 ' * n_agents}{RST}"
     badge_str = f" {badge}" if badge else ""
 
-    info = [
-        f"{model}{badge_str} {fg(DIM)}│{RST} {hearts}",
-        hp,
-        f"{cost_time} {fg(DIM)}│{RST} {fg(GREEN)}{active}{RST} {fg(SUBTLE)}working...{RST}",
-    ]
-
-    above_patterns = [
-        f"        {h}      {h}",
-        f"     {h}           {h}",
-        f"          {h}   {h}",
-        f"    {h}    {h}       {h}",
-    ]
-    above = above_patterns[tick % len(above_patterns)]
+    line0 = f"{model}{badge_str} {fg(DIM)}|{RST} {hearts}"
+    line1 = f"{hp}  {cost_time}  {fg(DIM)}|{RST} {fg(GREEN)}{active}{RST} {fg(SUBTLE)}working...{RST}"
 
     side_patterns = [
         [f" {h}", "",     ""],
@@ -240,7 +217,7 @@ def decorate_subagent(sprite_lines, tick, session=None):
     ]
     sides = side_patterns[tick % len(side_patterns)]
 
-    return _build(sprite_lines, info, above=above, sides=sides)
+    return _build(line0, line1, sprite_lines, sides=sides)
 
 
 def decorate_compact(sprite_lines, tick, session=None):
@@ -253,29 +230,19 @@ def decorate_compact(sprite_lines, tick, session=None):
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
 
     flavor, _ = get_flavor_text("compacting", s.get("hp_pct"), tick=tick)
-    flavor_str = f" {fg(DIM)}│{RST} {fg(SUBTLE)}▶ {flavor}{RST}" if flavor else ""
+    flavor_str = f"  {fg(DIM)}>{RST} {fg(SUBTLE)}{flavor}{RST}" if flavor else ""
 
     badge_str = f" {badge}" if badge else ""
 
-    info = [
-        f"{model}{badge_str}",
-        hp,
-        f"{cost_time}{flavor_str}",
-    ]
+    line0 = f"{model}{badge_str}"
+    line1 = f"{hp}  {cost_time}{flavor_str}"
 
+    # ZZZ effects next to sprite
     z_cycle = tick % 4
     zc_list = [240, 245, 250, 245]
     zc = zc_list[z_cycle]
-
-    z_above = [
-        f"               {fg(250)}Z{RST}",
-        f"             {fg(245)}Z{RST}  {fg(250)}Z{RST}",
-        f"           {fg(240)}z{RST}  {fg(245)}Z{RST}  {fg(250)}Z{RST}",
-        f"             {fg(240)}z{RST}  {fg(245)}Z{RST}",
-    ]
-    above = z_above[z_cycle]
-
     z = f"{fg(zc)}z{RST}"
+
     side_patterns = [
         [f" {z}", "",    ""],
         ["",     f" {z}", ""],
@@ -284,7 +251,7 @@ def decorate_compact(sprite_lines, tick, session=None):
     ]
     sides = side_patterns[z_cycle]
 
-    return _build(sprite_lines, info, above=above, sides=sides)
+    return _build(line0, line1, sprite_lines, sides=sides)
 
 
 def decorate_ratelimit(sprite_lines, tick, session=None):
@@ -298,17 +265,11 @@ def decorate_ratelimit(sprite_lines, tick, session=None):
     cost_time = format_cost_time(s.get("cost", 0), s.get("duration", 0))
 
     flavor, _ = get_flavor_text("ratelimited", hp_pct=0, tick=tick)
-    flavor_str = f" {fg(DIM)}│{RST} {fg(SUBTLE)}▶ {flavor}{RST}" if flavor else ""
+    flavor_str = f"  {fg(DIM)}>{RST} {fg(SUBTLE)}{flavor}{RST}" if flavor else ""
 
     badge_str = f" {badge}" if badge else ""
 
-    info = [
-        f"{model}{badge_str}",
-        hp,
-        f"{cost_time}{flavor_str}",
-        "",
-    ]
+    line0 = f"{model}{badge_str} {fg(DIM)}|{RST} {fg(SUBTLE)}Retry ~{mins}m{RST}"
+    line1 = f"{hp}  {cost_time}{flavor_str}"
 
-    below = f"{fg(SUBTLE)}Retry ~{mins}m{RST}"
-
-    return _build(sprite_lines, info, below=below)
+    return _build(line0, line1, sprite_lines)

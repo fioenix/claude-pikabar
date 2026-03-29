@@ -12,8 +12,10 @@ from .palette import (
 
 # Bar dimensions
 BAR_WIDTH = 16
-BAR_FILL = "█"   # U+2588
-BAR_EMPTY = "░"  # U+2591
+# Use ASCII-safe characters for Claude Code compatibility
+# (Unicode block elements render double-wide in Ink.js)
+BAR_FILL = "#"
+BAR_EMPTY = "."
 
 
 def hp_color(hp_pct):

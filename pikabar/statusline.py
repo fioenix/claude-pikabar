@@ -13,7 +13,7 @@ Usage in ~/.claude/settings.json:
     }
 }
 
-No animation loop — Claude Code calls this script on each update.
+Claude Code calls this script on each state update (debounced ~300ms).
 Frame counter persisted in /tmp/pikabar-frame for sprite animation.
 Git info cached in /tmp/pikabar-git-cache for performance.
 """
@@ -27,15 +27,13 @@ import time
 # Ensure pikabar package is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pikabar.palette import fg, RST, SUBTLE, DIM, GOLD, GREEN
 from pikabar.renderer import grid_to_lines
 from pikabar.sprites import (
-    THINK_FRAMES, STREAM_FRAMES, TOOL_FRAMES,
-    SUBAGENT_FRAMES, COMPACT_FRAME, BALL_FRAMES,
+    THINK_FRAMES, COMPACT_FRAME, BALL_FRAMES,
 )
-from pikabar.hp_bar import render_hp_line, get_badge
-from pikabar.info_panel import format_model, format_git, format_cost_time, INFO_COL
-from pikabar.flavor import get_flavor_text
+from pikabar.info_panel import (
+    decorate_thinking, decorate_compact, decorate_ratelimit,
+)
 
 # --- Temp file paths ---
 FRAME_FILE = "/tmp/pikabar-frame"
@@ -98,7 +96,7 @@ def get_git_info(cwd):
 
 
 def compute_hp(data):
-    """Compute HP% = 100 - max(5h_used, 7d_used). Returns (hp_pct, window_label) or (None, None)."""
+    """Compute HP% = 100 - max(5h_used, 7d_used)."""
     rate = data.get("rate_limits")
     if not rate:
         return None, None
@@ -109,7 +107,6 @@ def compute_hp(data):
     if five_h is None and seven_d is None:
         return None, None
 
-    # Use whichever window is more constrained (higher used = lower remaining)
     if five_h is not None and seven_d is not None:
         if five_h >= seven_d:
             return max(0, int(100 - five_h)), "5h"
@@ -121,59 +118,15 @@ def compute_hp(data):
         return max(0, int(100 - seven_d)), "7d"
 
 
-def get_retry_minutes(data):
-    """Calculate minutes until rate limit resets. Returns None if not rate limited."""
-    rate = data.get("rate_limits", {})
-    now = time.time()
-    min_wait = None
-    for window in ["five_hour", "seven_day"]:
-        w = rate.get(window, {})
-        used = w.get("used_percentage", 0) or 0
-        resets_at = w.get("resets_at")
-        if used >= 99 and resets_at:
-            wait = max(1, int((resets_at - now) / 60))
-            if min_wait is None or wait < min_wait:
-                min_wait = wait
-    return min_wait
-
-
 def infer_state(data, hp_pct):
-    """Infer Pikachu's emotional state from available data.
-
-    Claude Code doesn't expose an explicit state machine.
-    We infer from context changes and rate limit status.
-    """
-    # Rate limited: HP = 0
+    """Infer Pikachu's emotional state."""
     if hp_pct is not None and hp_pct <= 0:
         return "ratelimited"
-
-    # Check context for compacting (used% dropped significantly)
     ctx = data.get("context_window", {})
     used_pct = ctx.get("used_percentage")
-
-    # If context > 90%, likely compacting soon or happening
     if used_pct is not None and used_pct > 90:
         return "compacting"
-
-    # Default: cycle between thinking and streaming based on frame
     return "active"
-
-
-def select_frames(state, frame):
-    """Select sprite frames based on state."""
-    if state == "ratelimited":
-        return BALL_FRAMES
-    elif state == "compacting":
-        return [COMPACT_FRAME]
-    else:
-        # Cycle between think and stream frames for visual variety
-        cycles = [THINK_FRAMES, STREAM_FRAMES, TOOL_FRAMES, STREAM_FRAMES]
-        return cycles[(frame // 8) % len(cycles)]
-
-
-def COL(n):
-    """Absolute column positioning."""
-    return f"\033[{n}G"
 
 
 def render_statusline(data):
@@ -182,7 +135,8 @@ def render_statusline(data):
 
     # --- Extract data from Claude Code JSON ---
     model_id = data.get("model", {}).get("id", "")
-    model_name = data.get("model", {}).get("display_name", "Claude")
+    display_name = data.get("model", {}).get("display_name", "Claude")
+    model_name = display_name.split()[0] if display_name else "Claude"
 
     cwd = data.get("workspace", {}).get("current_dir", data.get("cwd", ""))
     branch, staged, modified = get_git_info(cwd) if cwd else ("", 0, 0)
@@ -193,67 +147,51 @@ def render_statusline(data):
 
     hp_pct, hp_window = compute_hp(data)
 
+    session = {
+        "model_id": model_id,
+        "model_name": model_name,
+        "hp_pct": hp_pct,
+        "hp_window": hp_window,
+        "branch": branch,
+        "staged": staged,
+        "modified": modified,
+        "cost": cost_usd,
+        "duration": duration_secs,
+    }
+
     # --- Determine state and select sprite ---
     state = infer_state(data, hp_pct)
-    frames = select_frames(state, frame)
+
+    if state == "ratelimited":
+        frames = BALL_FRAMES
+    elif state == "compacting":
+        frames = [COMPACT_FRAME]
+    else:
+        # Default: thinking animation (eyes glancing, tail sway)
+        frames = THINK_FRAMES
+
     sprite_grid = frames[frame % len(frames)]
     sprite_lines = grid_to_lines(sprite_grid)
 
-    # --- Build info lines ---
-    is_rate_limited = (state == "ratelimited")
-    is_compacting = (state == "compacting")
+    # --- Delegate to the appropriate decorator ---
+    if state == "ratelimited":
+        output_lines = decorate_ratelimit(sprite_lines, frame, session=session)
+    elif state == "compacting":
+        output_lines = decorate_compact(sprite_lines, frame, session=session)
+    else:
+        output_lines = decorate_thinking(sprite_lines, frame, session=session)
 
-    model_str = format_model(model_id, model_name)
-    badge = get_badge(hp_pct, is_compacting=is_compacting, is_rate_limited=is_rate_limited)
-    git_str = format_git(branch, staged, modified)
-    hp_str = render_hp_line(hp_pct, hp_window, tick=frame)
-    cost_time_str = format_cost_time(cost_usd, duration_secs)
-
-    # Flavor text
-    state_key = state if state != "active" else "streaming"
-    flavor, _ = get_flavor_text(state_key, hp_pct, cost_usd, duration_secs // 60, tick=frame)
-
-    # --- Compose lines ---
-    badge_part = f" {badge}" if badge else ""
-    git_part = f" {fg(DIM)}│{RST} {git_str}" if git_str else ""
-    flavor_part = f" {fg(DIM)}│{RST} {fg(SUBTLE)}▶ {flavor}{RST}" if flavor else ""
-
-    # Rate limited: show retry time
-    if is_rate_limited:
-        retry = get_retry_minutes(data)
-        if retry:
-            flavor_part = f" {fg(DIM)}│{RST} {fg(SUBTLE)}Retry ~{retry}m{RST}"
-
-    info_lines = [
-        f"{model_str}{badge_part}{git_part}",
-        hp_str,
-        f"{cost_time_str}{flavor_part}",
-    ]
-
-    # --- Output multi-line statusline ---
-    # Each sprite line paired with info, using absolute column positioning
-    output_lines = []
-    for i, sp in enumerate(sprite_lines):
-        info = info_lines[i] if i < len(info_lines) else ""
-        output_lines.append(f"  {sp}{COL(INFO_COL)}{info}")
-
-    # Extra info lines if sprite has fewer lines than info
-    for i in range(len(sprite_lines), len(info_lines)):
-        output_lines.append(f"{COL(INFO_COL)}{info_lines[i]}")
-
-    return "\n".join(output_lines)
+    # Prefix each line with \033[0m to prevent Ink.js whitespace trimming
+    return "\n".join(f"\033[0m{line}" for line in output_lines)
 
 
 def main():
     try:
         data = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
-        # Graceful fallback if no/bad input
-        print("[pikabar] waiting for data...")
-        return
+        data = {}
 
-    output = render_statusline(data)
-    print(output)
+    print(render_statusline(data))
 
 
 if __name__ == "__main__":
