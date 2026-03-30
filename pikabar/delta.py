@@ -8,7 +8,9 @@ for file I/O (load_state / save_state).
 import hashlib
 import json
 import os
+import random
 import time
+from datetime import date
 from typing import Dict, List, Optional, Tuple
 
 # --- File paths ---
@@ -64,6 +66,62 @@ def make_snapshot(hp_pct, hp_window, context_pct,
         "stg": staged,
         "mod": modified,
     }
+
+
+# ============================================================
+# Shiny Pikachu (Feature 3) — 1/500 chance per session start
+# ============================================================
+
+SHINY_CHANCE = 1 / 500
+
+
+def check_shiny(prev_state):
+    """Roll for shiny on session start. Persists across calls within a session.
+
+    Returns True if shiny. If prev_state has shiny=True, propagate it.
+    If no prev_state (new session), roll 1/500.
+    """
+    if prev_state is not None:
+        return prev_state.get("shiny", False)
+    return random.random() < SHINY_CHANCE
+
+
+# ============================================================
+# Streak counter (Feature 5) — consecutive active days
+# ============================================================
+
+def compute_streak(prev_state):
+    """Compute streak_days from previous state.
+
+    Returns (streak_days, last_active_date_str).
+    A streak continues if last_active was today or yesterday.
+    """
+    today = date.today().isoformat()
+
+    if prev_state is None:
+        return 1, today
+
+    last_date_str = prev_state.get("last_active")
+    prev_streak = prev_state.get("streak", 0)
+
+    if not last_date_str:
+        return 1, today
+
+    if last_date_str == today:
+        # Same day — keep current streak
+        return max(prev_streak, 1), today
+
+    try:
+        last_date = date.fromisoformat(last_date_str)
+        delta_days = (date.today() - last_date).days
+        if delta_days == 1:
+            # Consecutive day — increment
+            return prev_streak + 1, today
+        else:
+            # Streak broken
+            return 1, today
+    except (ValueError, TypeError):
+        return 1, today
 
 
 def _safe_sub(a, b):

@@ -13,6 +13,12 @@ RD = 203   # Red (cheeks)
 BR = 94    # Brown
 W  = 231   # White (eye highlights)
 
+# --- Shiny Pikachu colors (orange-tinted, like game shiny variants) ---
+SY  = 208   # Shiny body (orange instead of yellow)
+SLY = 215   # Shiny light (lighter orange)
+SDY = 166   # Shiny dark (deep orange shadows)
+SRD = 197   # Shiny cheeks (magenta-pink instead of red)
+
 # --- Pokeball colors ---
 PW = 255   # Pokeball white
 PR = 196   # Pokeball red

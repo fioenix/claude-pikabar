@@ -3,7 +3,7 @@
 Voice: Pokemon game narrator, third-person present tense.
 Max 28 chars per message to fit the info panel layout.
 
-8 reaction pools + easter eggs.
+8 reaction pools + session greetings + critical drama + easter eggs.
 """
 
 import random
@@ -169,6 +169,57 @@ NUMBER_EGGS = {
     42: "The answer to everything.",
     69: "Nice.",
 }
+
+# ============================================================
+# Session greetings (first call, no previous state)
+# ============================================================
+
+SESSION_GREETINGS = [
+    "PIKACHU, I choose you!",
+    "A wild SESSION appeared!",
+    "Trainer entered the arena!",
+    "Let the battle begin!",
+    "PIKACHU is ready to go!",
+    "Time to code!",
+    "A new adventure starts!",
+    "PIKACHU joined the party!",
+]
+
+SESSION_DAY_GREETINGS = {
+    0: "Monday. Battle stations!",   # Monday
+    4: "PIKACHU used FRIDAY!",       # Friday
+    5: "Weekend coding? Bold.",      # Saturday
+    6: "Sunday session? Respect.",   # Sunday
+}
+
+# ============================================================
+# Critical HP drama (HP < 10%)
+# ============================================================
+
+CRITICAL_FLAVOR = [
+    "It's do or die!",
+    "PIKACHU can barely stand!",
+    "One last chance...",
+    "Critical HP! Danger!",
+    "PIKACHU is struggling!",
+    "Almost out of moves!",
+    "PIKACHU used ENDURE!",
+    "Hanging by a thread!",
+]
+
+
+def get_session_greeting():
+    """Return a greeting for the first statusline call of a session."""
+    now = datetime.now()
+    day = now.weekday()
+    if day in SESSION_DAY_GREETINGS and random.random() < 0.5:
+        return SESSION_DAY_GREETINGS[day]
+    return random.choice(SESSION_GREETINGS)
+
+
+def get_critical_flavor():
+    """Return dramatic flavor text for critical HP (<10%)."""
+    return random.choice(CRITICAL_FLAVOR)
 
 
 def get_flavor_text(state, hp_pct=None, cost_usd=0.0, duration_min=0,

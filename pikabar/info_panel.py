@@ -19,7 +19,7 @@ Info is padded to INFO_COL via spaces (Ink.js does not support CSI CHA).
 
 from .palette import fg, bg, RST, BOLD, SUBTLE, DIM, GOLD, GREEN, RD, visible_len
 from .hp_bar import render_hp_bar, render_pp_bar, get_badge
-from .flavor import get_flavor_text
+from .flavor import get_flavor_text, get_session_greeting, get_critical_flavor
 
 # Layout constants
 SP = ""            # no left margin — flush to terminal left edge
@@ -31,15 +31,26 @@ DECORATED_LINES = 5  # 1 above + 3 sprite + 1 pad (Pikachu) or 1 above + 4 sprit
 # Model / git formatters
 # ============================================================
 
-def format_model(model_id="", display_name=""):
-    """Format model as 'Lv.N SPECIES' (Pokemon style)."""
+def format_model(model_id="", display_name="", streak_days=0):
+    """Format model as 'Lv.N SPECIES' (Pokemon style) + optional streak flame."""
     import re
     species = display_name.split()[0].upper() if display_name else "CLAUDE"
     level = "?"
     match = re.search(r'(?:opus|sonnet|haiku)-(\d+)', model_id.lower())
     if match:
         level = match.group(1)
-    return f"{BOLD}Lv.{level}{RST} {BOLD}{species}{RST}"
+    base = f"{BOLD}Lv.{level}{RST} {BOLD}{species}{RST}"
+    if streak_days >= 2:
+        # Flame color escalates: 2-4 = orange, 5-9 = red-orange, 10+ = bright red
+        if streak_days >= 10:
+            flame_c = 196  # bright red
+        elif streak_days >= 5:
+            flame_c = 202  # red-orange
+        else:
+            flame_c = 208  # orange
+        # Use ASCII flame char — emoji rendering varies across terminals
+        base = f"{base} {fg(flame_c)}x{streak_days}{RST}"
+    return base
 
 
 def format_git(branch=None, staged=0, modified=0):
@@ -142,7 +153,9 @@ def _info_lines(session, badge_override=None, line0_override=None, extra_overrid
     if line0_override is not None:
         model_line = line0_override
     else:
-        model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"))
+        streak = s.get("streak_days", 0)
+        model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"),
+                             streak_days=streak)
         if badge_override is not None:
             badge = badge_override
         else:
@@ -154,10 +167,14 @@ def _info_lines(session, badge_override=None, line0_override=None, extra_overrid
         cost_str = f" {fg(DIM)}|{RST} {cost}" if cost else ""
         model_line = f"{model}{badge_str}{git_str}{cost_str}"
 
-    # [2] HP bar — "5h limit" or "7d limit" or just "limit"
+    # [2] HP bar — "5h limit" or "7d limit", or "DANGER" when critical
     hp = render_hp_bar(s.get("hp_pct"), tick=tick)
+    hp_pct = s.get("hp_pct")
     hp_window = s.get("hp_window")
-    if hp_window and s.get("hp_pct") is not None:
+    if hp_pct is not None and hp_pct < 10:
+        # Feature 4: Critical HP drama — red DANGER label
+        hp_label = f"{fg(RD)}{BOLD}DANGER{RST}"
+    elif hp_window and hp_pct is not None:
         hp_label = f"{fg(SUBTLE)}{hp_window} limit{RST}"
     else:
         hp_label = f"{fg(SUBTLE)}limit{RST}"
@@ -168,8 +185,17 @@ def _info_lines(session, badge_override=None, line0_override=None, extra_overrid
     pp_label = f"{fg(SUBTLE)}ctx left{RST}"
     pp_line = f"{pp} {pp_label}"
 
-    # [4] Extra line (override or empty)
-    extra = extra_override if extra_override is not None else ""
+    # [4] Extra line: override > session greeting > critical HP drama > flavor > empty
+    if extra_override is not None:
+        extra = extra_override
+    elif "session_start" in s.get("events", []):
+        # Feature 1: Session greeting on first call
+        extra = f"{fg(228)}{get_session_greeting()}{RST}"
+    elif hp_pct is not None and hp_pct < 10:
+        # Feature 4: Critical HP drama flavor text
+        extra = f"{fg(RD)}{get_critical_flavor()}{RST}"
+    else:
+        extra = ""
 
     return ["", model_line, hp_line, pp_line, extra]
 
@@ -203,24 +229,34 @@ def decorate_staging(sprite_lines, tick, session=None):
 
 
 def decorate_committed(sprite_lines, tick, session=None):
-    """Committed: hearts float above + beside sprite."""
-    hc_list = [RD, 204, 197, 203]
-    hc = hc_list[tick % len(hc_list)]
-    h = f"{fg(hc)}♥{RST}"
+    """Committed: confetti particles float above + beside sprite."""
+    # Multi-color confetti — dense celebration particles
+    confetti_chars = ["·", "+", "*", "✦", "♥", "·", "+", "*"]
+    confetti_colors = [RD, 204, 228, 114, 141, 208, 81, 219]
+    import random
+    _rng = random.Random(tick)  # deterministic per tick for consistency
 
+    def _particle():
+        ch = confetti_chars[_rng.randint(0, len(confetti_chars) - 1)]
+        cc = confetti_colors[_rng.randint(0, len(confetti_colors) - 1)]
+        return f"{fg(cc)}{ch}{RST}"
+
+    # Dense confetti above: 3-4 particles scattered
+    p = [_particle() for _ in range(6)]
     above_patterns = [
-        f"        {h}      {h}",
-        f"     {h}        {h}",
-        f"          {h}  {h}",
-        f"    {h}    {h}",
+        f"    {p[0]}   {p[1]}     {p[2]}  {p[3]}",
+        f"      {p[0]}  {p[1]}   {p[2]}    {p[3]}",
+        f"   {p[0]}     {p[1]}  {p[2]}   {p[3]}",
+        f"     {p[0]}    {p[1]}    {p[2]} {p[3]}",
     ]
     above = above_patterns[tick % len(above_patterns)]
 
+    s1, s2, s3 = _particle(), _particle(), _particle()
     side_patterns = [
-        [f" {h}", "",     ""],
-        ["",     f" {h}", ""],
-        ["",     "",     f" {h}"],
-        [f" {h}", "",     f" {h}"],
+        [f" {s1}", "",      f" {s2}"],
+        [f" {s1}", f" {s2}", ""],
+        ["",      f" {s1}", f" {s2}"],
+        [f" {s1}", f" {s2}", f" {s3}"],
     ]
     sides = side_patterns[tick % len(side_patterns)]
 

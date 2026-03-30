@@ -1,11 +1,11 @@
-"""Tests for pikabar.cli — install/uninstall commands."""
+"""Tests for pikabar.cli — install/uninstall/update commands."""
 
 import json
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
-from pikabar.cli import install, uninstall, SETTINGS_PATH
+from pikabar.cli import install, uninstall, update, SETTINGS_PATH
 
 
 def _with_temp_settings(fn):
@@ -70,5 +70,26 @@ def test_uninstall_restores_backup():
             settings = json.load(f)
         assert settings["statusLine"]["command"] == "other-tool"
         assert "_pikabar_backup_statusLine" not in settings
+
+    _with_temp_settings(run)
+
+
+def test_update_refreshes_command():
+    """Update should refresh the statusLine command in settings."""
+    def run(path):
+        install()
+        # Verify pikabar is installed
+        with open(path) as f:
+            before = json.load(f)
+        assert "pikabar" in before["statusLine"]["command"]
+
+        # Mock pip install to succeed without actually calling pip
+        with patch("pikabar.cli.subprocess.check_call"):
+            update()
+
+        with open(path) as f:
+            after = json.load(f)
+        # Command should still contain pikabar (refreshed, not removed)
+        assert "pikabar" in after["statusLine"]["command"]
 
     _with_temp_settings(run)

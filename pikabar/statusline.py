@@ -32,11 +32,15 @@ from pikabar.renderer import grid_to_lines
 from pikabar.sprites import (
     IDLE_FRAMES, THINKING_SP, STAGING_SP, COMMITTED_SP,
     RECOVERED_SP, HIT_SP, COMPACTED_SP, BALL_FRAMES,
+    SHINY_IDLE_FRAMES, SHINY_THINKING_SP, SHINY_STAGING_SP,
+    SHINY_COMMITTED_SP, SHINY_RECOVERED_SP, SHINY_HIT_SP,
+    SHINY_COMPACTED_SP,
 )
 from pikabar.info_panel import decorate
 from pikabar.delta import (
     load_state, save_state, make_snapshot,
     compute_deltas, infer_events, pick_reaction,
+    check_shiny, compute_streak,
 )
 
 # --- Temp file paths ---
@@ -54,6 +58,17 @@ REACTION_SPRITES = {
     "hit":       HIT_SP,
     "compacted": COMPACTED_SP,
     "faint":     None,  # uses BALL_FRAMES[frame % N]
+}
+
+SHINY_REACTION_SPRITES = {
+    "idle":      None,  # uses SHINY_IDLE_FRAMES
+    "thinking":  SHINY_THINKING_SP,
+    "staging":   SHINY_STAGING_SP,
+    "committed": SHINY_COMMITTED_SP,
+    "recovered": SHINY_RECOVERED_SP,
+    "hit":       SHINY_HIT_SP,
+    "compacted": SHINY_COMPACTED_SP,
+    "faint":     None,  # pokeball is pokeball, shiny or not
 }
 
 
@@ -134,10 +149,14 @@ def compute_hp(data):
         return max(0, int(100 - seven_d)), "7d"
 
 
-def get_sprite(reaction, frame):
+def get_sprite(reaction, frame, shiny=False):
     """Select the appropriate sprite grid for a reaction."""
     if reaction == "faint":
         return BALL_FRAMES[frame % len(BALL_FRAMES)]
+    if shiny:
+        if reaction == "idle":
+            return SHINY_IDLE_FRAMES[frame % len(SHINY_IDLE_FRAMES)]
+        return SHINY_REACTION_SPRITES.get(reaction, SHINY_IDLE_FRAMES[0])
     if reaction == "idle":
         return IDLE_FRAMES[frame % len(IDLE_FRAMES)]
     return REACTION_SPRITES.get(reaction, IDLE_FRAMES[0])
@@ -169,6 +188,16 @@ def render_statusline(data):
     prev_state = load_state(cwd)
     deltas = compute_deltas(prev_state, snapshot)
     events = infer_events(deltas, snapshot, prev_state)
+
+    # --- Feature 3: Shiny Pikachu (1/500 per session) ---
+    is_shiny = check_shiny(prev_state)
+    snapshot["shiny"] = is_shiny
+
+    # --- Feature 5: Streak counter (consecutive active days) ---
+    streak_days, last_active = compute_streak(prev_state)
+    snapshot["streak"] = streak_days
+    snapshot["last_active"] = last_active
+
     save_state(snapshot, cwd)
 
     # --- Pick reaction ---
@@ -191,11 +220,13 @@ def render_statusline(data):
         "events": events,
         "deltas": deltas,
         "reaction": reaction,
+        "shiny": is_shiny,
+        "streak_days": streak_days,
         "_tick": frame,
     }
 
     # --- Select sprite and decorate ---
-    sprite_grid = get_sprite(reaction, frame)
+    sprite_grid = get_sprite(reaction, frame, shiny=is_shiny)
     sprite_lines = grid_to_lines(sprite_grid)
     output_lines = decorate(reaction, sprite_lines, frame, session=session)
 

@@ -15,7 +15,7 @@ Reaction sprites:
   BALL_FRAMES   — pokeball wobble (faint/ratelimited)
 """
 
-from .palette import Y, LY, DY, BK, RD, W, PW, PR
+from .palette import Y, LY, DY, BK, RD, W, PW, PR, SY, SLY, SDY, SRD
 
 _ = None  # transparent pixel
 
@@ -177,3 +177,35 @@ BALL_FRAMES = [
 
 THINK_FRAMES = IDLE_FRAMES
 COMPACT_FRAME = COMPACTED_SP
+
+
+# ============================================================
+# Shiny Pikachu variants (Feature 3: 1/500 per session)
+# ============================================================
+
+def make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W),
+                    tail_variant=0, feet_variant=0):
+    """Shiny Pikachu — orange palette swap, like the games."""
+    # Reuse make_pika but patch colors after generation
+    grid = make_pika(left_eye, right_eye, tail_variant, feet_variant)
+    # Swap palette: Y→SY, LY→SLY, DY→SDY, RD→SRD
+    COLOR_MAP = {Y: SY, LY: SLY, DY: SDY, RD: SRD}
+    for r in range(len(grid)):
+        for c in range(len(grid[r])):
+            if grid[r][c] in COLOR_MAP:
+                grid[r][c] = COLOR_MAP[grid[r][c]]
+    return grid
+
+
+SHINY_IDLE_FRAMES = [
+    make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1),
+    make_shiny_pika(left_eye=(W, BK), right_eye=(W, BK), tail_variant=0, feet_variant=1),
+    make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=1, feet_variant=1),
+]
+
+SHINY_THINKING_SP = make_shiny_pika(left_eye=(W, BK), right_eye=(W, BK), tail_variant=1, feet_variant=0)
+SHINY_STAGING_SP = SHINY_THINKING_SP
+SHINY_COMMITTED_SP = make_shiny_pika(left_eye=(BK, W), right_eye=(SY, SDY), tail_variant=1, feet_variant=0)
+SHINY_RECOVERED_SP = make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1)
+SHINY_HIT_SP = make_shiny_pika(left_eye=(SY, SDY), right_eye=(SY, SDY), tail_variant=0, feet_variant=1)
+SHINY_COMPACTED_SP = make_shiny_pika(left_eye=(SY, SDY), right_eye=(SY, SDY), tail_variant=0, feet_variant=0)
