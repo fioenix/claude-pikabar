@@ -32,7 +32,7 @@ Repository = "https://github.com/fioenix/claude-pikabar"
 Issues = "https://github.com/fioenix/claude-pikabar/issues"
 
 [project.scripts]
-pikabar = "pikabar.statusline:main"
+pikabar = "pikabar.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["pikabar*"]

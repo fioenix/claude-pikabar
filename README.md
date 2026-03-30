@@ -23,13 +23,23 @@ Turn your rate limits into a Pokemon battle HUD. Pikachu reacts to your coding s
 
 ## Quick Start
 
-### 1. Clone
+```bash
+pip install git+https://github.com/fioenix/claude-pikabar.git
+pikabar install
+```
+
+That's it. Restart Claude Code and Pikachu appears.
+
+To remove: `pikabar uninstall`
+
+### Manual install (without pip)
+
+<details>
+<summary>Click to expand</summary>
 
 ```bash
 git clone https://github.com/fioenix/claude-pikabar.git ~/.claude/pikabar
 ```
-
-### 2. Configure Claude Code
 
 Add to `~/.claude/settings.json`:
 
@@ -43,24 +53,7 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-### 3. Verify
-
-```bash
-echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"rate_limits":{"five_hour":{"used_percentage":28}},"context_window":{"used_percentage":15}}' | python3 ~/.claude/pikabar/pikabar/statusline.py
-```
-
-You should see Pikachu with HP/PP bars in your terminal.
-
-### 4. Done
-
-The statusline appears automatically on your next Claude Code interaction.
-
-## Alternative: pip install
-
-```bash
-pip install -e ~/.claude/pikabar
-# Then use: pikabar as the command in settings.json
-```
+</details>
 
 ## Demo Mode
 
