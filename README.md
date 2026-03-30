@@ -4,7 +4,9 @@ A Pokemon-style statusline for [Claude Code](https://docs.anthropic.com/en/docs/
 
 Turn your rate limits into a Pokemon battle HUD. Pikachu reacts to your coding session in real-time — thinking with lightning bolts, celebrating commits, and fainting into a Pokeball when you're rate limited.
 
-<!-- TODO: Add hero GIF/screenshot here -->
+<p align="center">
+  <img src="assets/pikabar-preview.png" alt="pikabar in action" width="600">
+</p>
 
 ## Features
 
