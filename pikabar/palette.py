@@ -1,5 +1,8 @@
 """ANSI 256-color palette and terminal escape helpers."""
 
+import re as _re
+import unicodedata as _unicodedata
+
 # --- Pikachu colors ---
 Y  = 220   # Yellow (body)
 LY = 228   # Light yellow
@@ -61,11 +64,9 @@ def visible_len(s):
     Accounts for wide characters (e.g. ⚡ = 2 cols) using
     Unicode East Asian Width. W/F = 2 cols, everything else = 1.
     """
-    import re
-    import unicodedata
-    stripped = re.sub(r'\033\[[^m]*m', '', s)
+    stripped = _re.sub(r'\033\[[^m]*m', '', s)
     width = 0
     for ch in stripped:
-        eaw = unicodedata.east_asian_width(ch)
+        eaw = _unicodedata.east_asian_width(ch)
         width += 2 if eaw in ('W', 'F') else 1
     return width

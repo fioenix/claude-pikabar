@@ -184,6 +184,7 @@ def render_statusline(data):
         "hp_pct": hp_pct,
         "hp_window": hp_window,
         "pp_pct": pp_pct,
+        "cost_usd": cost_usd,
         "branch": branch,
         "staged": staged,
         "modified": modified,

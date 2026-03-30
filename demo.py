@@ -42,6 +42,7 @@ DEMO_SESSION = {
     "hp_pct": 72,
     "hp_window": "5h",
     "pp_pct": 85,
+    "cost_usd": 0.42,
 }
 
 # Session states for each demo segment

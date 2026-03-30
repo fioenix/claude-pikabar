@@ -1,34 +1,32 @@
 # pikabar
 
-A Pokemon-style statusline for [Claude Code](https://code.claude.com).
+A Pokemon-style statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-Pikachu pixel art mascot with an HP bar, status badges, and battle narrator flavor text — right in your terminal.
+Turn your rate limits into a Pokemon battle HUD. Pikachu reacts to your coding session in real-time — thinking with lightning bolts, celebrating commits, and fainting into a Pokeball when you're rate limited.
 
-```
-  ▄█▀         ▄███████▀       Lv.4 OPUS │ main +2 ~1
-  ██▄  ▄▀ █▄▀█ █▄▀█ ██       HP ████████████░░░░ 72% 5h
-  █▀  █▀▀█ ██ █▀▀█ ██       P$0.42 3m12s │ ▶ PIKACHU used FOCUS.
-       ▀▄   ▀▄
-```
+<!-- TODO: Add hero GIF/screenshot here -->
 
 ## Features
 
 - **Pikachu pixel art** rendered with Unicode half-blocks (▀▄█) + ANSI 256-color
-- **6 emotional states**: Thinking, Streaming, Tool Use, Subagent, Compacting, Rate Limited
+- **8 reaction states**: idle, thinking, staging, committed, recovered, compacted, hit, faint
 - **HP bar** = rate limit quota remaining (green > yellow > red, like the games)
+- **PP bar** = context window space remaining (steel blue)
 - **Status badges**: `[PAR]` `[SLP]` `[PSN]` `[BRN]` `[FRZ]` with game-accurate colors
 - **Lv.N SPECIES** model display (Lv.4 OPUS, Lv.3 SONNET)
-- **P$** Pokedollar cost tracking
-- **Pokeball wobble** when rate limited (Pikachu recalled!)
-- **48 flavor texts** + easter eggs in Pokemon battle narrator voice
-- **Git branch** + staged/modified counts with caching
+- **Session cost** tracking ($0.42)
+- **Delta-driven reactions** — Pikachu responds to changes between statusline calls
+- **Pokeball** when rate limited (Pikachu recalled!)
+- **64 flavor texts** + easter eggs in Pokemon battle narrator voice
+- **Git branch** + staged/modified counts
+- **Zero dependencies** — pure Python 3.8+ stdlib
 
 ## Quick Start
 
 ### 1. Clone
 
 ```bash
-git clone https://github.com/user/pikabar.git ~/.claude/pikabar
+git clone https://github.com/anthropic-claude/claude-pikabar.git ~/.claude/pikabar
 ```
 
 ### 2. Configure Claude Code
@@ -45,43 +43,54 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-### 3. Done
+### 3. Verify
+
+```bash
+echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"rate_limits":{"five_hour":{"used_percentage":28}},"context_window":{"used_percentage":15}}' | python3 ~/.claude/pikabar/pikabar/statusline.py
+```
+
+You should see Pikachu with HP/PP bars in your terminal.
+
+### 4. Done
 
 The statusline appears automatically on your next Claude Code interaction.
 
-## Demo Mode
-
-Preview all animation states without Claude Code:
+## Alternative: pip install
 
 ```bash
-cd pikabar
+pip install -e ~/.claude/pikabar
+# Then use: pikabar as the command in settings.json
+```
+
+## Demo Mode
+
+Preview all reaction states:
+
+```bash
+cd ~/.claude/pikabar
 python3 demo.py
 ```
 
-Options:
-- `0` = Unified demo (all states transition in one view)
-- `1` = All states separately
-- `2-7` = Individual states (Thinking, Streaming, Tool Use, Subagent, Compacting, Rate Limited)
-
 ## How It Works
 
-Claude Code pipes JSON session data to the statusline script via stdin on each interaction. pikabar reads the JSON, extracts metrics, renders the Pikachu sprite + info panel, and prints multi-line ANSI-colored output to stdout.
+Claude Code pipes JSON session data to the statusline script via stdin on each interaction. pikabar reads the JSON, computes deltas from the previous call, infers the appropriate reaction, renders the sprite + info panel, and prints multi-line ANSI output to stdout.
 
 ### Data Flow
 
 ```
-Claude Code ──JSON stdin──▶ pikabar/statusline.py ──stdout──▶ Terminal
+Claude Code ──JSON stdin──▶ statusline.py ──stdout──▶ Terminal
                                │
-                               ├── Reads model, cost, duration, rate limits
-                               ├── Computes HP% from rate limit quota remaining
-                               ├── Selects sprite frame (persisted in /tmp/pikabar-frame)
-                               ├── Gets git info (cached in /tmp/pikabar-git-cache)
-                               └── Renders pixel art + HP bar + badges + flavor text
+                               ├── Load previous state (/tmp/pikabar-state-*)
+                               ├── Compute deltas (HP, context, cost, git)
+                               ├── Infer events → pick reaction
+                               ├── Render sprite + HP/PP bars + badges
+                               ├── Save current state (atomic write)
+                               └── Output 5-line ANSI art
 ```
 
 ### HP Bar Semantics
 
-HP represents your **rate limit quota remaining** — the resource developers actually care about:
+HP represents your **rate limit quota remaining**:
 
 | HP | Color | Meaning |
 |---|---|---|
@@ -92,11 +101,35 @@ HP represents your **rate limit quota remaining** — the resource developers ac
 | 0% | Pokeball appears | Rate limited (paralyzed!) |
 
 HP uses whichever rate window (5-hour or 7-day) is more constrained.
-When no rate limit data is available (before first API call), shows `HP ??? ---`.
+
+### PP Bar Semantics
+
+PP represents your **context window space remaining**:
+
+| PP | Color | Meaning |
+|---|---|---|
+| High | Steel blue | Plenty of context space |
+| Low | Steel blue | Context filling up |
+| Compacted | SLP badge | Context was compacted |
+
+### Reaction System
+
+pikabar detects changes between statusline calls and picks the highest-priority reaction:
+
+| Reaction | Trigger | Visual |
+|---|---|---|
+| faint | HP < 15% | Pokeball sprite |
+| hit | Heavy cost/HP burst | Sweat drops |
+| compacted | Context window compacted | ZZZ + SLP badge |
+| thinking | Long operation (>8s) | Lightning bolts ⚡ |
+| recovered | HP jumped back up | Sparkles ✦ |
+| committed | Git staged count dropped | Hearts ♥ |
+| staging | Files modified/staged | Stars * |
+| idle | Default | Normal Pikachu |
 
 ### Status Badges
 
-One badge at a time, matching Pokemon game colors and priority:
+One badge at a time, Pokemon game-accurate priority:
 
 | Badge | Trigger | Color |
 |---|---|---|
@@ -106,59 +139,46 @@ One badge at a time, matching Pokemon game colors and priority:
 | `PSN` | HP <= 15% | Purple |
 | `BRN` | HP <= 35% | Orange |
 
-### Available Data (from Claude Code)
-
-pikabar reads these fields from the [Claude Code statusline JSON](https://code.claude.com/docs/en/statusline):
-
-| Field | Used For |
-|---|---|
-| `model.id`, `model.display_name` | Lv.N SPECIES display |
-| `cost.total_cost_usd` | Pokedollar cost (P$) |
-| `cost.total_duration_ms` | Session duration |
-| `rate_limits.five_hour.used_percentage` | HP bar (inverted) |
-| `rate_limits.seven_day.used_percentage` | HP bar fallback |
-| `rate_limits.*.resets_at` | Retry countdown |
-| `workspace.current_dir` | Git info (cached) |
-| `context_window.used_percentage` | Compacting state inference |
-
 ## Project Structure
 
 ```
 pikabar/
 ├── demo.py                  # Interactive demo (python3 demo.py)
+├── pyproject.toml           # Package config (pip install -e .)
 ├── pikabar/
-│   ├── __init__.py
+│   ├── __init__.py          # Version + exports
 │   ├── palette.py           # ANSI 256-color constants + terminal escapes
-│   ├── renderer.py          # Half-block pixel art engine
-│   ├── sprites.py           # Pikachu (6 states) + Pokeball pixel grids
-│   ├── hp_bar.py            # HP bar + status badges
-│   ├── info_panel.py        # 5-line layout with decoration functions
-│   ├── flavor.py            # 48 flavor texts + easter eggs
-│   ├── animator.py          # Demo animation engine
-│   └── statusline.py        # Claude Code integration (reads stdin JSON)
-├── LICENSE                  # MIT
-└── README.md
+│   ├── renderer.py          # Half-block pixel art engine (▀▄█)
+│   ├── sprites.py           # Pikachu (8 states) + Pokeball pixel grids
+│   ├── hp_bar.py            # HP/PP bar rendering + status badges
+│   ├── info_panel.py        # 5-line layout engine with 8 decorators
+│   ├── delta.py             # State persistence + delta detection + reactions
+│   ├── flavor.py            # 64 flavor texts + easter eggs
+│   ├── animator.py          # Demo-only animation engine
+│   └── statusline.py        # Entry point (stdin JSON → stdout ANSI)
+├── tests/                   # pytest test suite
+└── LICENSE                  # MIT
 ```
 
 ## Requirements
 
 - Python 3.8+
 - A 256-color terminal (iTerm2, Kitty, WezTerm, Alacritty, Windows Terminal)
-- [Claude Code](https://code.claude.com) for the statusline integration
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) for the statusline integration
 - No external Python dependencies
 
 ## Performance
 
 - Script runs on each Claude Code interaction (~300ms debounce)
-- Git operations cached for 5 seconds (`/tmp/pikabar-git-cache`)
-- Frame counter persisted in `/tmp/pikabar-frame`
+- Git operations cached for 5 seconds
+- State persisted in `/tmp/pikabar-state-*` (per-workspace, atomic writes)
 - No network calls, no API tokens consumed
 
 ## Testing
 
 ```bash
-# Test with mock Claude Code JSON input
-echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"context_window":{"used_percentage":25},"cost":{"total_cost_usd":0.42,"total_duration_ms":192000},"rate_limits":{"five_hour":{"used_percentage":28}}}' | python3 pikabar/statusline.py
+pip install pytest
+pytest
 ```
 
 ## License
@@ -167,4 +187,4 @@ MIT
 
 ## Credits
 
-Inspired by the [Claude Code statusline API](https://code.claude.com/docs/en/statusline) and every Pokemon game ever made.
+Built for the [Claude Code statusline API](https://docs.anthropic.com/en/docs/claude-code). Inspired by every Pokemon game ever made.

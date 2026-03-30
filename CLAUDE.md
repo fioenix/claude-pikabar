@@ -11,11 +11,13 @@ pikabar/
 ├── pikabar/statusline.py    # ENTRY POINT: Claude Code integration (stdin JSON → stdout)
 ├── pikabar/palette.py       # Color constants (ANSI 256), terminal escapes
 ├── pikabar/renderer.py      # Half-block pixel engine (▀▄█ with fg/bg colors)
-├── pikabar/sprites.py       # Pixel art grids: Pikachu (6x15) + Pokeball (7x11)
-├── pikabar/hp_bar.py        # HP bar rendering + Pokemon status badges
-├── pikabar/info_panel.py    # 5-line layout engine with 6 state decorators
-├── pikabar/flavor.py        # 48 battle narrator texts + easter eggs
+├── pikabar/sprites.py       # Pixel art grids: Pikachu (8 states) + Pokeball (7x11)
+├── pikabar/hp_bar.py        # HP/PP bar rendering + Pokemon status badges
+├── pikabar/info_panel.py    # 5-line layout engine with 8 reaction decorators
+├── pikabar/delta.py         # State persistence + delta detection + reaction selection
+├── pikabar/flavor.py        # 64 battle narrator texts + easter eggs
 ├── pikabar/animator.py      # Demo-only animation engine (cursor-up loop)
+├── tests/                   # pytest test suite
 └── demo.py                  # Interactive demo (not used in production)
 ```
 

@@ -54,8 +54,19 @@ def format_git(branch=None, staged=0, modified=0):
     return " ".join(parts)
 
 
+def format_cost(cost_usd):
+    """Format session cost: $0.42 — compact, dim when low."""
+    if not cost_usd or cost_usd <= 0:
+        return ""
+    if cost_usd < 0.01:
+        return f"{fg(SUBTLE)}<$0.01{RST}"
+    if cost_usd < 1.0:
+        return f"{fg(SUBTLE)}${cost_usd:.2f}{RST}"
+    return f"{fg(GOLD)}${cost_usd:.2f}{RST}"
+
+
 # ============================================================
-# Layout builder (two-zone with absolute column positioning)
+# Layout builder (two-zone with space-padding)
 # ============================================================
 
 def _line(sprite, info_str, above_str=None, right_eff=""):
@@ -127,7 +138,7 @@ def _info_lines(session, badge_override=None, line0_override=None, extra_overrid
     s = session or {}
     tick = s.get("_tick", 0)
 
-    # [1] Model + badge + git
+    # [1] Model + badge + git + cost
     if line0_override is not None:
         model_line = line0_override
     else:
@@ -139,7 +150,9 @@ def _info_lines(session, badge_override=None, line0_override=None, extra_overrid
         badge_str = f" {badge}" if badge else ""
         git = format_git(s.get("branch"), s.get("staged", 0), s.get("modified", 0))
         git_str = f" {fg(DIM)}|{RST} {git}" if git else ""
-        model_line = f"{model}{badge_str}{git_str}"
+        cost = format_cost(s.get("cost_usd", 0))
+        cost_str = f" {fg(DIM)}|{RST} {cost}" if cost else ""
+        model_line = f"{model}{badge_str}{git_str}{cost_str}"
 
     # [2] HP bar — "5h limit" or "7d limit" or just "limit"
     hp = render_hp_bar(s.get("hp_pct"), tick=tick)

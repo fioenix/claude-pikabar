@@ -9,3 +9,11 @@ __pycache__/
 dist/
 build/
 .venv/
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
