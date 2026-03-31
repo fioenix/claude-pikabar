@@ -72,7 +72,7 @@ def make_snapshot(hp_pct, hp_window, context_pct,
 # Shiny Pikachu (Feature 3) — 1/500 chance per session start
 # ============================================================
 
-SHINY_CHANCE = 1 / 500
+SHINY_CHANCE = 1 / 1024  # 2^10, Nintendo-style power-of-2
 
 
 def check_shiny(prev_state):
