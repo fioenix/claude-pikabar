@@ -21,6 +21,12 @@ Turn your rate limits into a Pokemon battle HUD. Pikachu reacts to your coding s
 - **Pokeball** when rate limited (Pikachu recalled!)
 - **64 flavor texts** + easter eggs in Pokemon battle narrator voice
 - **Git branch** + staged/modified counts
+- **Shiny Pikachu** — 1/1024 chance per session (orange palette, per-session persistence)
+- **Session greeting** — Pokemon-style welcome text on first call (day-aware)
+- **Commit confetti** — multi-color celebration particles on git commits
+- **Critical HP drama** — DANGER label + dramatic flavor text when HP < 10%
+- **Streak counter** — consecutive active days with escalating flame icon
+- **Self-update** — `pikabar update` pulls latest from GitHub
 - **Zero dependencies** — pure Python 3.8+ stdlib
 
 ## Quick Start
@@ -32,7 +38,7 @@ pikabar install
 
 That's it. Restart Claude Code and Pikachu appears.
 
-To remove: `pikabar uninstall`
+To update: `pikabar update` | To remove: `pikabar uninstall`
 
 ### Manual install (without pip)
 
@@ -118,7 +124,7 @@ pikabar detects changes between statusline calls and picks the highest-priority 
 | compacted | Context window compacted | ZZZ + SLP badge |
 | thinking | Long operation (>8s) | Lightning bolts ⚡ |
 | recovered | HP jumped back up | Sparkles ✦ |
-| committed | Git staged count dropped | Hearts ♥ |
+| committed | Git staged count dropped | Confetti ·+*✦♥ |
 | staging | Files modified/staged | Stars * |
 | idle | Default | Normal Pikachu |
 
@@ -142,16 +148,17 @@ pikabar/
 ├── pyproject.toml           # Package config (pip install -e .)
 ├── pikabar/
 │   ├── __init__.py          # Version + exports
+│   ├── cli.py               # CLI: install | uninstall | update
+│   ├── statusline.py        # Entry point (stdin JSON → stdout ANSI)
 │   ├── palette.py           # ANSI 256-color constants + terminal escapes
 │   ├── renderer.py          # Half-block pixel art engine (▀▄█)
-│   ├── sprites.py           # Pikachu (8 states) + Pokeball pixel grids
+│   ├── sprites.py           # Pikachu (8 states) + Shiny variants + Pokeball
 │   ├── hp_bar.py            # HP/PP bar rendering + status badges
 │   ├── info_panel.py        # 5-line layout engine with 8 decorators
-│   ├── delta.py             # State persistence + delta detection + reactions
-│   ├── flavor.py            # 64 flavor texts + easter eggs
-│   ├── animator.py          # Demo-only animation engine
-│   └── statusline.py        # Entry point (stdin JSON → stdout ANSI)
-├── tests/                   # pytest test suite
+│   ├── delta.py             # State persistence + delta detection + shiny + streak
+│   ├── flavor.py            # 64 flavor texts + greetings + critical drama
+│   └── animator.py          # Demo-only animation engine
+├── tests/                   # pytest test suite (76 tests)
 └── LICENSE                  # MIT
 ```
 
@@ -173,7 +180,7 @@ pikabar/
 
 ```bash
 pip install pytest
-pytest
+pytest            # 76 tests
 ```
 
 ## License
