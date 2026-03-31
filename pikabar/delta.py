@@ -132,6 +132,71 @@ def _safe_sub(a, b):
 
 
 # ============================================================
+# Team System (Feature 7) — Each model gets a different Pokemon
+# ============================================================
+
+# Default team - 6 Pokemon slots
+# Each slot has a starter species that can evolve independently
+DEFAULT_TEAM = ["pikachu", "pikachu", "pichu", "raichu", "pichu", "raichu"]
+
+# Model family to team slot mapping
+MODEL_TEAM_SLOTS = {
+    "opus":   0,   # Opus → slot 0 (Pikachu)
+    "sonnet": 1,   # Sonnet → slot 1 (Pikachu)
+    "haiku":  2,   # Haiku → slot 2 (Pichu)
+    "claude": 3,   # Other Claude → slot 3 (Raichu)
+}
+
+# Per-slot evolution state (tracks each Pokemon on the team independently)
+def get_team_slot_index(model_id):
+    """Get team slot index for a model."""
+    model_lower = model_id.lower()
+    for key, slot in MODEL_TEAM_SLOTS.items():
+        if key in model_lower:
+            return slot
+    return 3  # Default to slot 3
+
+
+def init_team_state():
+    """Initialize team state with default team and per-slot evolution stages."""
+    team_state = {}
+    for i, species in enumerate(DEFAULT_TEAM):
+        team_state[i] = {
+            "species": species,
+            "evolution_stage": 0,
+            "cost_accumulated": 0.0,  # Track cost per Pokemon
+        }
+    return team_state
+
+
+def get_pokemon_for_model(model_id, team_state):
+    """Get the current Pokemon species for a model from team state.
+
+    Args:
+        model_id: Model ID string
+        team_state: Dict of team slot → Pokemon state
+
+    Returns:
+        Tuple of (species_key, evolution_stage, slot_index)
+    """
+    slot = get_team_slot_index(model_id)
+    if team_state is None or slot not in team_state:
+        # Initialize team state
+        return DEFAULT_TEAM[slot], 0, slot
+
+    slot_state = team_state[slot]
+    # Apply evolution stage
+    stage = slot_state.get("evolution_stage", 0)
+    species = slot_state.get("species", DEFAULT_TEAM[slot])
+
+    EVOLUTION_STAGES = ["pichu", "pikachu", "raichu"]
+    if stage > 0 and stage < len(EVOLUTION_STAGES):
+        species = EVOLUTION_STAGES[stage]
+
+    return species, stage, slot
+
+
+# ============================================================
 # Model → Species mapping (Feature 2)
 # ============================================================
 
@@ -208,6 +273,30 @@ def check_evolution(prev_state, cur_snapshot):
     # All conditions met — evolve!
     new_stage = stage + 1
     return True, new_stage
+
+
+def check_team_evolution(slot_state):
+    """Check if a team Pokemon should evolve.
+
+    Args:
+        slot_state: Dict with species, evolution_stage, cost_accumulated
+
+    Returns:
+        Tuple of (evolved: bool, new_stage: int)
+    """
+    species = slot_state.get("species", "pikachu")
+    stage = slot_state.get("evolution_stage", 0)
+    cost = slot_state.get("cost_accumulated", 0.0)
+
+    threshold = EVOLUTION_THRESHOLDS.get(species)
+    if threshold is None:
+        return False, stage
+
+    for key, required in threshold.items():
+        if key == "cost" and cost < required:
+            return False, stage
+
+    return True, stage + 1
 
 
 def compute_deltas(prev, cur):

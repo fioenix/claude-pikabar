@@ -34,7 +34,9 @@ from pikabar.delta import (
     load_state, save_state, make_snapshot,
     compute_deltas, infer_events, pick_reaction,
     check_shiny, compute_streak,
-    get_species_for_model, check_evolution, EVOLUTION_STAGES,
+    get_species_for_model, check_evolution, check_team_evolution,
+    EVOLUTION_STAGES, DEFAULT_TEAM, init_team_state, get_pokemon_for_model,
+    get_team_slot_index,
 )
 from pikabar.sprites import (
     POKEMON_SPECIES, get_species_sprites,
@@ -196,33 +198,49 @@ def render_statusline(data):
     snapshot["streak"] = streak_days
     snapshot["last_active"] = last_active
 
-    # --- Feature 2 & 6: Species + Evolution ---
-    # Get previous evolution stage (0=pichu, 1=pikachu, 2=raichu)
-    evolution_stage = prev_state.get("evolution_stage", 0) if prev_state else 0
-    # Derive base species from model_id
-    base_species = get_species_for_model(model_id, evolution_stage)
+    # --- Feature 7: Team System ---
+    # Initialize or load team state
+    if prev_state and "team" in prev_state:
+        team_state = prev_state["team"]
+    else:
+        team_state = init_team_state()
 
-    # Copy cumulative state from prev_state for evolution check
-    # (snapshot.cost is fresh from this call; prev_state.cost is cumulative)
+    # Get current team slot for this model
+    slot_index = get_team_slot_index(model_id)
+    slot_state = team_state.get(slot_index, {
+        "species": DEFAULT_TEAM[slot_index],
+        "evolution_stage": 0,
+        "cost_accumulated": 0.0,
+    })
+
+    # Get Pokemon species with evolution applied
+    base_species, evolution_stage, _ = get_pokemon_for_model(model_id, team_state)
+
+    # Copy cumulative cost from prev_state
     if prev_state:
-        snapshot["cost"] = prev_state.get("cost", 0)
-        snapshot["dur"] = prev_state.get("dur", 0)
-    snapshot["species"] = base_species
-    snapshot["evolution_stage"] = evolution_stage
+        cumulative_cost = prev_state.get("cost", 0)
+    else:
+        cumulative_cost = cost_usd
+    slot_state["cost_accumulated"] = cumulative_cost
 
-    # Check for evolution on session start
-    # Evolution is checked whenever we have existing state
-    # (prev_state may exist from previous call, but we still check thresholds)
+    # Check for evolution for this team slot
     just_evolved = False
-    evolved, new_stage = check_evolution(prev_state, snapshot)
+    evolved, new_stage = check_team_evolution(slot_state)
     if evolved:
         evolution_stage = new_stage
         base_species = EVOLUTION_STAGES[new_stage]
-        snapshot["evolution_stage"] = evolution_stage
-        snapshot["species"] = base_species
+        slot_state["evolution_stage"] = evolution_stage
+        slot_state["species"] = base_species
         just_evolved = True
+        team_state[slot_index] = slot_state
 
-    # Get final species (base + shiny modifier for display)
+    # Update snapshot and team state
+    snapshot["team"] = team_state
+    snapshot["species"] = base_species
+    snapshot["evolution_stage"] = evolution_stage
+    snapshot["team_slot"] = slot_index
+
+    # Get final species for display
     species = base_species
     pokemon_name = POKEMON_SPECIES[species]["name"]
 
