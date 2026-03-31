@@ -180,11 +180,13 @@ def get_pokemon_for_model(model_id, team_state):
         Tuple of (species_key, evolution_stage, slot_index)
     """
     slot = get_team_slot_index(model_id)
-    if team_state is None or slot not in team_state:
+    slot_key = str(slot)  # Ensure string key for JSON compatibility
+
+    if team_state is None or slot_key not in team_state:
         # Initialize team state
         return DEFAULT_TEAM[slot], 0, slot
 
-    slot_state = team_state[slot]
+    slot_state = team_state[slot_key]
     # Apply evolution stage
     stage = slot_state.get("evolution_stage", 0)
     species = slot_state.get("species", DEFAULT_TEAM[slot])

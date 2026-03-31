@@ -207,7 +207,9 @@ def render_statusline(data):
 
     # Get current team slot for this model
     slot_index = get_team_slot_index(model_id)
-    slot_state = team_state.get(slot_index, {
+    slot_key = str(slot_index)  # Use string key for JSON compatibility
+
+    slot_state = team_state.get(slot_key, {
         "species": DEFAULT_TEAM[slot_index],
         "evolution_stage": 0,
         "cost_accumulated": 0.0,
@@ -216,12 +218,11 @@ def render_statusline(data):
     # Get Pokemon species with evolution applied
     base_species, evolution_stage, _ = get_pokemon_for_model(model_id, team_state)
 
-    # Copy cumulative cost from prev_state
-    if prev_state:
-        cumulative_cost = prev_state.get("cost", 0)
-    else:
-        cumulative_cost = cost_usd
-    slot_state["cost_accumulated"] = cumulative_cost
+    # Accumulate cost for this Pokemon
+    # Use existing cost from team state, add current session cost
+    prev_slot_cost = slot_state.get("cost_accumulated", 0.0)
+    new_cost = prev_slot_cost + cost_usd
+    slot_state["cost_accumulated"] = new_cost
 
     # Check for evolution for this team slot
     just_evolved = False
@@ -232,7 +233,9 @@ def render_statusline(data):
         slot_state["evolution_stage"] = evolution_stage
         slot_state["species"] = base_species
         just_evolved = True
-        team_state[slot_index] = slot_state
+
+    # Update team state with string key
+    team_state[slot_key] = slot_state
 
     # Update snapshot and team state
     snapshot["team"] = team_state
