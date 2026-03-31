@@ -76,28 +76,43 @@ def test_committed_confetti_has_variety():
 # Feature 3: Shiny Pikachu
 # ============================================================
 
-def test_shiny_propagates_within_session():
-    """Mid-session (no session_start): propagate shiny flag from state."""
-    assert check_shiny({"shiny": True}, []) is True
-    assert check_shiny({"shiny": False}, []) is False
+def test_shiny_persists_within_session():
+    """Same session_id returns same shiny flag without re-rolling."""
+    state = {"shiny_map": {"sess-A": True}}
+    is_shiny, _ = check_shiny(state, "sess-A")
+    assert is_shiny is True
+
+    state2 = {"shiny_map": {"sess-A": False}}
+    is_shiny2, _ = check_shiny(state2, "sess-A")
+    assert is_shiny2 is False
 
 
-def test_shiny_rerolls_on_session_start():
-    """Each session_start triggers a new shiny roll."""
+def test_shiny_new_session_rolls():
+    """New session_id triggers a fresh roll."""
+    state = {"shiny_map": {"sess-A": True}}
     with patch("pikabar.delta.random") as mock_rand:
-        mock_rand.random.return_value = 0.0001  # < 1/2048 = shiny
-        assert check_shiny({"shiny": False}, ["session_start"]) is True
-        mock_rand.random.return_value = 0.5  # > 1/2048 = not shiny
-        assert check_shiny({"shiny": True}, ["session_start"]) is False
+        mock_rand.random.return_value = 0.5  # not shiny
+        is_shiny, smap = check_shiny(state, "sess-B")
+        assert is_shiny is False
+        assert smap["sess-B"] is False
+        assert smap["sess-A"] is True  # A preserved
 
 
-def test_shiny_new_session_no_prev_state():
+def test_shiny_switch_back_preserves():
+    """Switching back to session A keeps its shiny flag."""
+    state = {"shiny_map": {"sess-A": True, "sess-B": False}}
+    is_shiny, _ = check_shiny(state, "sess-A")
+    assert is_shiny is True
+    is_shiny_b, _ = check_shiny(state, "sess-B")
+    assert is_shiny_b is False
+
+
+def test_shiny_no_prev_state():
     """First-ever call (no state file) rolls for shiny."""
     with patch("pikabar.delta.random") as mock_rand:
         mock_rand.random.return_value = 0.0001
-        assert check_shiny(None, []) is True
-        mock_rand.random.return_value = 0.5
-        assert check_shiny(None, []) is False
+        is_shiny, _ = check_shiny(None, "sess-new")
+        assert is_shiny is True
 
 
 def test_shiny_sprite_uses_different_palette():

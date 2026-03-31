@@ -189,9 +189,11 @@ def render_statusline(data):
     deltas = compute_deltas(prev_state, snapshot)
     events = infer_events(deltas, snapshot, prev_state)
 
-    # --- Feature 3: Shiny Pikachu (1/500 per session) ---
-    is_shiny = check_shiny(prev_state, events)
-    snapshot["shiny"] = is_shiny
+    # --- Feature 3: Shiny Pikachu (1/1024 per session) ---
+    session_id = data.get("session_id", "")
+    is_shiny, shiny_map = check_shiny(prev_state, session_id)
+    snapshot["shiny_map"] = shiny_map
+    snapshot["session_id"] = session_id
 
     # --- Feature 5: Streak counter (consecutive active days) ---
     streak_days, last_active = compute_streak(prev_state)

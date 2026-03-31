@@ -75,17 +75,38 @@ def make_snapshot(hp_pct, hp_window, context_pct,
 SHINY_CHANCE = 1 / 1024  # 2^10, Nintendo-style power-of-2
 
 
-def check_shiny(prev_state, events):
-    """Roll for shiny on each new session. Persists within a session.
+def check_shiny(prev_state, session_id):
+    """Roll for shiny per session_id. Persists across calls within a session.
 
-    Re-rolls on every session_start event (not just first-ever call).
-    Once shiny within a session, stays shiny until next session.
+    Stores a dict of {session_id: bool} in state. Each session gets one
+    roll — switching between sessions preserves their individual shiny flag.
+    Session A shiny, session B not shiny, back to A = still shiny.
     """
-    if "session_start" in events:
-        return random.random() < SHINY_CHANCE
+    shiny_map = {}
     if prev_state is not None:
-        return prev_state.get("shiny", False)
-    return random.random() < SHINY_CHANCE
+        shiny_map = prev_state.get("shiny_map", {})
+        # Migrate old single-bool format
+        if "shiny" in prev_state and not shiny_map:
+            old_sid = prev_state.get("session_id", "")
+            if old_sid:
+                shiny_map[old_sid] = prev_state["shiny"]
+
+    if not session_id:
+        return random.random() < SHINY_CHANCE, shiny_map
+
+    if session_id in shiny_map:
+        return shiny_map[session_id], shiny_map
+
+    # New session — roll
+    is_shiny = random.random() < SHINY_CHANCE
+    shiny_map[session_id] = is_shiny
+
+    # Keep map small: max 20 sessions
+    if len(shiny_map) > 20:
+        oldest = list(shiny_map.keys())[0]
+        del shiny_map[oldest]
+
+    return is_shiny, shiny_map
 
 
 # ============================================================
