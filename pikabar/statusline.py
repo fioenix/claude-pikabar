@@ -193,6 +193,11 @@ def render_statusline(data):
     hp_pct, hp_window = compute_hp(data)
     context_pct = data.get("context_window", {}).get("used_percentage")
 
+    # Agent / worktree fields (absent in normal sessions)
+    agent_name = data.get("agent", {}).get("name") or ""
+    worktree_name = data.get("worktree", {}).get("name") or ""
+    worktree_branch = data.get("worktree", {}).get("branch") or ""
+
     # --- Delta detection ---
     snapshot = make_snapshot(
         hp_pct, hp_window, context_pct,
@@ -240,6 +245,9 @@ def render_statusline(data):
         "reaction": reaction,
         "shiny": is_shiny,
         "streak_days": streak_days,
+        "agent_name": agent_name,
+        "worktree_name": worktree_name,
+        "worktree_branch": worktree_branch,
         "_tick": tick,
     }
 

@@ -222,6 +222,34 @@ def get_critical_flavor():
     return random.choice(CRITICAL_FLAVOR)
 
 
+# ============================================================
+# Agent Teams flavor (agent mode)
+# ============================================================
+
+AGENT_FLAVOR = [
+    "AGENT deployed!",
+    "Running recon...",
+    "Awaiting orders...",
+    "On mission.",
+    "Syncing with team...",
+    "Team formation!",
+    "Specialist active.",
+    "Agent standing by.",
+]
+
+
+def get_agent_flavor(agent_name=""):
+    """Return flavor text for agent mode. Uses agent name if short enough."""
+    if agent_name and len(agent_name) <= 10:
+        options = [
+            f"{agent_name.upper()} deployed!",
+            f"{agent_name.upper()} on mission.",
+            f"Go, {agent_name.upper()}!",
+        ]
+        return random.choice(options + AGENT_FLAVOR)
+    return random.choice(AGENT_FLAVOR)
+
+
 def get_flavor_text(state, hp_pct=None, cost_usd=0.0, duration_min=0,
                     tick=0, chance=0.08):
     """Get flavor text for the current reaction state.
