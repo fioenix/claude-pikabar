@@ -79,17 +79,21 @@ def test_committed_confetti_has_variety():
 
 def test_shiny_propagates_from_prev_state():
     """If prev state is shiny, current stays shiny."""
-    assert check_shiny({"shiny": True}) is True
-    assert check_shiny({"shiny": False}) is False
+    is_shiny, _ = check_shiny({"shiny": True, "session_id": "s1"}, session_id="s1")
+    assert is_shiny is True
+    is_shiny, _ = check_shiny({"shiny": False, "session_id": "s1"}, session_id="s1")
+    assert is_shiny is False
 
 
 def test_shiny_new_session_rolls():
     """New session (no prev state) rolls for shiny."""
     with patch("pikabar.delta.random") as mock_rand:
-        mock_rand.random.return_value = 0.0001  # < 1/500 = shiny
-        assert check_shiny(None) is True
-        mock_rand.random.return_value = 0.5  # > 1/500 = not shiny
-        assert check_shiny(None) is False
+        mock_rand.random.return_value = 0.0001  # < 1/1024 = shiny
+        is_shiny, _ = check_shiny(None, session_id="s1")
+        assert is_shiny is True
+        mock_rand.random.return_value = 0.5  # > 1/1024 = not shiny
+        is_shiny, _ = check_shiny(None, session_id="s2")
+        assert is_shiny is False
 
 
 def test_shiny_sprite_uses_different_palette():

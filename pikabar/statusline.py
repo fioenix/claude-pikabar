@@ -34,9 +34,8 @@ from pikabar.delta import (
     load_state, save_state, make_snapshot,
     compute_deltas, infer_events, pick_reaction,
     check_shiny, compute_streak,
-    get_species_for_model, check_evolution, check_team_evolution,
-    EVOLUTION_STAGES, DEFAULT_TEAM, init_team_state, get_pokemon_for_model,
-    get_team_slot_index,
+    EVOLUTION_STAGES, init_team_state, get_pokemon_state,
+    get_species_from_stage, check_evolution,
 )
 from pikabar.sprites import (
     POKEMON_SPECIES, get_species_sprites,
@@ -189,62 +188,51 @@ def render_statusline(data):
     deltas = compute_deltas(prev_state, snapshot)
     events = infer_events(deltas, snapshot, prev_state)
 
-    # --- Feature 3: Shiny (1/1024 per session) ---
-    is_shiny = check_shiny(prev_state)
+    # --- Shiny per session ---
+    session_id = data.get("session_id") or data.get("sessionId", "")
+    is_shiny, shiny_map = check_shiny(prev_state, session_id)
     snapshot["shiny"] = is_shiny
+    snapshot["shiny_map"] = shiny_map
+    snapshot["session_id"] = session_id
 
     # --- Feature 5: Streak counter (consecutive active days) ---
     streak_days, last_active = compute_streak(prev_state)
     snapshot["streak"] = streak_days
     snapshot["last_active"] = last_active
 
-    # --- Feature 7: Team System ---
+    # --- Team System ---
     # Initialize or load team state
     if prev_state and "team" in prev_state:
         team_state = prev_state["team"]
     else:
         team_state = init_team_state()
 
-    # Get current team slot for this model
-    slot_index = get_team_slot_index(model_id)
-    slot_key = str(slot_index)  # Use string key for JSON compatibility
-
-    slot_state = team_state.get(slot_key, {
-        "species": DEFAULT_TEAM[slot_index],
-        "evolution_stage": 0,
-        "cost_accumulated": 0.0,
-    })
-
-    # Get Pokemon species with evolution applied
-    base_species, evolution_stage, _ = get_pokemon_for_model(model_id, team_state)
+    # Get Pokemon state
+    slot_state = get_pokemon_state(team_state)
 
     # Accumulate cost for this Pokemon
-    # Use existing cost from team state, add current session cost
-    prev_slot_cost = slot_state.get("cost_accumulated", 0.0)
-    new_cost = prev_slot_cost + cost_usd
-    slot_state["cost_accumulated"] = new_cost
+    # Use cost_delta (incremental), not total cost_usd (cumulative)
+    prev_cost = slot_state.get("cost_accumulated", 0.0)
+    slot_state["cost_accumulated"] = prev_cost + deltas["cost_delta"]
 
-    # Check for evolution for this team slot
+    # Check for evolution
     just_evolved = False
-    evolved, new_stage = check_team_evolution(slot_state)
+    evolved, new_stage = check_evolution(slot_state)
     if evolved:
-        evolution_stage = new_stage
-        base_species = EVOLUTION_STAGES[new_stage]
-        slot_state["evolution_stage"] = evolution_stage
-        slot_state["species"] = base_species
+        slot_state["evolution_stage"] = new_stage
+        slot_state["species"] = get_species_from_stage(new_stage)
         just_evolved = True
 
-    # Update team state with string key
-    team_state[slot_key] = slot_state
+    # Update team state
+    team_state["0"] = slot_state
 
-    # Update snapshot and team state
+    # Update snapshot
     snapshot["team"] = team_state
-    snapshot["species"] = base_species
-    snapshot["evolution_stage"] = evolution_stage
-    snapshot["team_slot"] = slot_index
+    snapshot["species"] = slot_state["species"]
+    snapshot["evolution_stage"] = slot_state["evolution_stage"]
 
-    # Get final species for display
-    species = base_species
+    # Get species for display
+    species = slot_state["species"]
     pokemon_name = POKEMON_SPECIES[species]["name"]
 
     save_state(snapshot, cwd)
@@ -261,7 +249,7 @@ def render_statusline(data):
         "model_name": model_name,
         "species": species,
         "pokemon_name": pokemon_name,
-        "evolution_stage": evolution_stage,
+        "evolution_stage": slot_state["evolution_stage"],
         "just_evolved": just_evolved,
         "hp_pct": hp_pct,
         "hp_window": hp_window,

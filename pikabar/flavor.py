@@ -183,8 +183,16 @@ EVOLUTION_FLAVOR = [
 
 
 def substitute_species(text, species_name="Pikachu"):
-    """Replace {SPECIES} placeholder with actual Pokemon name."""
-    return text.replace("{SPECIES}", species_name)
+    """Replace {SPECIES} placeholder with actual Pokemon name.
+
+    Falls back gracefully if placeholder missing or already substituted.
+    """
+    if not species_name:
+        species_name = "Pikachu"
+    result = text.replace("{SPECIES}", species_name)
+    # Safety: if still has placeholder variants, clean up
+    result = result.replace("{POKEMON}", species_name)
+    return result
 
 
 # ============================================================

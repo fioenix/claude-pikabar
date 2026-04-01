@@ -69,21 +69,49 @@ def make_snapshot(hp_pct, hp_window, context_pct,
 
 
 # ============================================================
-# Shiny Pikachu (Feature 3) — 1/500 chance per session start
+# Shiny Pikachu — 1/1024 chance per session start
 # ============================================================
 
 SHINY_CHANCE = 1 / 1024  # 2^10, Nintendo-style power-of-2
+MAX_SHINY_SESSIONS = 20  # Keep map small
 
 
-def check_shiny(prev_state):
-    """Roll for shiny on session start. Persists across calls within a session.
+def check_shiny(prev_state, session_id=None):
+    """Roll for shiny per session_id. Persists across calls within a session.
 
-    Returns True if shiny. If prev_state has shiny=True, propagate it.
-    If no prev_state (new session), roll 1/500.
+    Stores a dict of {session_id: bool} in state. Each session gets one
+    roll — switching between sessions preserves their individual shiny flag.
+    Session A shiny, session B not shiny, back to A = still shiny.
+
+    Returns:
+        Tuple of (is_shiny: bool, shiny_map: dict)
     """
+    shiny_map = {}
     if prev_state is not None:
-        return prev_state.get("shiny", False)
-    return random.random() < SHINY_CHANCE
+        shiny_map = prev_state.get("shiny_map", {})
+        # Migrate old single-bool format
+        if "shiny" in prev_state and not shiny_map:
+            old_sid = prev_state.get("session_id", "")
+            if old_sid:
+                shiny_map[old_sid] = prev_state["shiny"]
+
+    if not session_id:
+        # No session_id available, fall back to global roll
+        return random.random() < SHINY_CHANCE, shiny_map
+
+    if session_id in shiny_map:
+        return shiny_map[session_id], shiny_map
+
+    # New session — roll
+    is_shiny = random.random() < SHINY_CHANCE
+    shiny_map[session_id] = is_shiny
+
+    # Keep map small: evict oldest if over limit
+    if len(shiny_map) > MAX_SHINY_SESSIONS:
+        oldest = list(shiny_map.keys())[0]
+        del shiny_map[oldest]
+
+    return is_shiny, shiny_map
 
 
 # ============================================================
@@ -132,153 +160,60 @@ def _safe_sub(a, b):
 
 
 # ============================================================
-# Team System (Feature 7) — Each model gets a different Pokemon
+# Team System — Single species pool with evolution
+# All Pokemon start as Pikachu and evolve based on cumulative cost
 # ============================================================
-
-# Default team - 6 Pokemon slots
-# Each slot has a starter species that can evolve independently
-DEFAULT_TEAM = ["pikachu", "pikachu", "pichu", "raichu", "pichu", "raichu"]
-
-# Model family to team slot mapping
-MODEL_TEAM_SLOTS = {
-    "opus":   0,   # Opus → slot 0 (Pikachu)
-    "sonnet": 1,   # Sonnet → slot 1 (Pikachu)
-    "haiku":  2,   # Haiku → slot 2 (Pichu)
-    "claude": 3,   # Other Claude → slot 3 (Raichu)
-}
-
-# Per-slot evolution state (tracks each Pokemon on the team independently)
-def get_team_slot_index(model_id):
-    """Get team slot index for a model."""
-    model_lower = model_id.lower()
-    for key, slot in MODEL_TEAM_SLOTS.items():
-        if key in model_lower:
-            return slot
-    return 3  # Default to slot 3
-
-
-def init_team_state():
-    """Initialize team state with default team and per-slot evolution stages."""
-    team_state = {}
-    for i, species in enumerate(DEFAULT_TEAM):
-        team_state[i] = {
-            "species": species,
-            "evolution_stage": 0,
-            "cost_accumulated": 0.0,  # Track cost per Pokemon
-        }
-    return team_state
-
-
-def get_pokemon_for_model(model_id, team_state):
-    """Get the current Pokemon species for a model from team state.
-
-    Args:
-        model_id: Model ID string
-        team_state: Dict of team slot → Pokemon state
-
-    Returns:
-        Tuple of (species_key, evolution_stage, slot_index)
-    """
-    slot = get_team_slot_index(model_id)
-    slot_key = str(slot)  # Ensure string key for JSON compatibility
-
-    if team_state is None or slot_key not in team_state:
-        # Initialize team state
-        return DEFAULT_TEAM[slot], 0, slot
-
-    slot_state = team_state[slot_key]
-    # Apply evolution stage
-    stage = slot_state.get("evolution_stage", 0)
-    species = slot_state.get("species", DEFAULT_TEAM[slot])
-
-    EVOLUTION_STAGES = ["pichu", "pikachu", "raichu"]
-    if stage > 0 and stage < len(EVOLUTION_STAGES):
-        species = EVOLUTION_STAGES[stage]
-
-    return species, stage, slot
-
-
-# ============================================================
-# Model → Species mapping (Feature 2)
-# ============================================================
-
-MODEL_SPECIES_MAP = {
-    "opus":   "pikachu",
-    "sonnet": "pikachu",
-    "haiku":  "pichu",
-}
 
 EVOLUTION_STAGES = ["pichu", "pikachu", "raichu"]
 
 EVOLUTION_THRESHOLDS = {
-    "pichu":   {"cost": 1.0},   # ~1 session worth of usage
     "pikachu": {"cost": 10.0},  # ~10 sessions worth of usage
 }
 
-
-def get_species_for_model(model_id, evolution_stage=0):
-    """Derive base species from model_id, then apply evolution stage.
-
-    Evolution stage overrides the base species if the Pokemon has evolved
-    from its starter form (e.g., Haiku starts as Pichu but can evolve).
-
-    Args:
-        model_id: Full model ID string (e.g., "claude-opus-4-6")
-        evolution_stage: 0=pichu, 1=pikachu, 2=raichu (or -1=unknown)
-
-    Returns:
-        Species key string ("pichu", "pikachu", or "raichu")
-    """
-    # Determine base species from model
-    base = "pikachu"  # default
-    model_lower = model_id.lower()
-    for key, species in MODEL_SPECIES_MAP.items():
-        if key in model_lower:
-            base = species
-            break
-
-    # Apply evolution stage
-    if evolution_stage > 0 and evolution_stage < len(EVOLUTION_STAGES):
-        return EVOLUTION_STAGES[evolution_stage]
-    return base
+# Single team slot for single species pool
+TEAM_SLOT_KEY = "0"
 
 
-def check_evolution(prev_state, cur_snapshot):
-    """Check if current Pokemon should evolve.
+def init_team_state():
+    """Initialize team state with single slot for single species pool."""
+    return {
+        TEAM_SLOT_KEY: {
+            "species": "pikachu",
+            "evolution_stage": 1,  # 0=pichu, 1=pikachu, 2=raichu
+            "cost_accumulated": 0.0,
+        }
+    }
 
-    Evolution happens when:
-    - Pichu reaches $1.00 cumulative cost
-    - Pikachu reaches $10.00 cumulative cost
+
+def get_pokemon_state(team_state):
+    """Get the Pokemon state from team state.
 
     Args:
-        prev_state: Previous state snapshot (None on session start)
-        cur_snapshot: Current snapshot being built
+        team_state: Dict of team slot → Pokemon state
 
     Returns:
-        Tuple of (evolved: bool, new_stage: int)
+        Pokemon state dict with species, evolution_stage, cost_accumulated
     """
-    # Get current stage (0=pichu, 1=pikachu, 2=raichu)
-    stage = cur_snapshot.get("evolution_stage", 0)
-    species = cur_snapshot.get("species", "pikachu")
-
-    # Check if there's a next evolution available
-    threshold = EVOLUTION_THRESHOLDS.get(species)
-    if threshold is None:
-        # Already at final form (Raichu)
-        return False, stage
-
-    # Check all threshold conditions
-    for key, required in threshold.items():
-        if cur_snapshot.get(key, 0) < required:
-            return False, stage
-
-    # All conditions met — evolve!
-    new_stage = stage + 1
-    return True, new_stage
+    if team_state is None or TEAM_SLOT_KEY not in team_state:
+        return {
+            "species": "pikachu",
+            "evolution_stage": 1,
+            "cost_accumulated": 0.0,
+        }
+    return team_state[TEAM_SLOT_KEY]
 
 
-def check_team_evolution(slot_state):
-    """Check if a team Pokemon should evolve.
+def get_species_from_stage(stage):
+    """Get species key from evolution stage."""
+    if 0 <= stage < len(EVOLUTION_STAGES):
+        return EVOLUTION_STAGES[stage]
+    return "pikachu"
+
+
+def check_evolution(slot_state):
+    """Check if Pokemon should evolve based on accumulated cost.
+
+    Evolution happens when Pikachu reaches $10.00 cumulative cost.
 
     Args:
         slot_state: Dict with species, evolution_stage, cost_accumulated
@@ -287,18 +222,19 @@ def check_team_evolution(slot_state):
         Tuple of (evolved: bool, new_stage: int)
     """
     species = slot_state.get("species", "pikachu")
-    stage = slot_state.get("evolution_stage", 0)
+    stage = slot_state.get("evolution_stage", 1)
     cost = slot_state.get("cost_accumulated", 0.0)
 
     threshold = EVOLUTION_THRESHOLDS.get(species)
     if threshold is None:
+        # Already at final form (Raichu)
         return False, stage
 
-    for key, required in threshold.items():
-        if key == "cost" and cost < required:
-            return False, stage
+    required_cost = threshold.get("cost", 0)
+    if cost < required_cost:
+        return False, stage
 
-    return True, stage + 1
+    return True, min(stage + 1, len(EVOLUTION_STAGES) - 1)
 
 
 def compute_deltas(prev, cur):
