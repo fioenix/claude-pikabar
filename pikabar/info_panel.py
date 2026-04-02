@@ -19,7 +19,10 @@ Info is padded to INFO_COL via spaces (Ink.js does not support CSI CHA).
 
 from .palette import fg, bg, RST, BOLD, SUBTLE, DIM, GOLD, GREEN, RD, visible_len
 from .hp_bar import render_hp_bar, render_pp_bar, get_badge
-from .flavor import get_flavor_text, get_session_greeting, get_critical_flavor
+from .flavor import (
+    get_flavor_text, get_session_greeting, get_critical_flavor,
+    get_evolution_flavor, get_agent_flavor,
+)
 
 # Layout constants
 SP = ""            # no left margin — flush to terminal left edge
@@ -31,14 +34,28 @@ DECORATED_LINES = 5  # 1 above + 3 sprite + 1 pad (Pikachu) or 1 above + 4 sprit
 # Model / git formatters
 # ============================================================
 
-def format_model(model_id="", display_name="", streak_days=0):
-    """Format model as 'Lv.N SPECIES' (Pokemon style) + optional streak flame."""
+def format_model(model_id="", display_name="", streak_days=0, pokemon_name=None):
+    """Format model as 'Lv.N SPECIES' (Pokemon style) + optional streak flame.
+
+    Args:
+        model_id: Full model ID string (e.g., "claude-opus-4-6")
+        display_name: Display name from Claude Code (e.g., "Opus 4")
+        streak_days: Consecutive active days for flame indicator
+        pokemon_name: Pokemon species name to display (pichu, pikachu, raichu)
+                    If None, derives from display_name like before.
+    """
     import re
-    species = display_name.split()[0].upper() if display_name else "CLAUDE"
     level = "?"
     match = re.search(r'(?:opus|sonnet|haiku)-(\d+)', model_id.lower())
     if match:
         level = match.group(1)
+
+    # Use Pokemon species name if provided, otherwise fallback to model name
+    if pokemon_name:
+        species = pokemon_name.upper()
+    else:
+        species = display_name.split()[0].upper() if display_name else "CLAUDE"
+
     base = f"{BOLD}Lv.{level}{RST} {BOLD}{species}{RST}"
     if streak_days >= 2:
         # Flame color escalates: 2-4 = orange, 5-9 = red-orange, 10+ = bright red
@@ -74,6 +91,63 @@ def format_cost(cost_usd):
     if cost_usd < 1.0:
         return f"{fg(SUBTLE)}${cost_usd:.2f}{RST}"
     return f"{fg(GOLD)}${cost_usd:.2f}{RST}"
+
+
+# ============================================================
+# Agent Teams formatters
+# ============================================================
+
+def format_agent_label(agent_name, worktree_name=""):
+    """Format agent identity for the above info slot (line 0).
+
+    Shows agent name in bold gold + optional worktree location.
+    Max ~28 visible chars to fit the panel.
+    """
+    name = agent_name.upper()
+    if len(name) > 14:
+        name = name[:13] + "\u2026"  # ellipsis
+    label = f"{BOLD}{fg(GOLD)}{name}{RST}"
+    if worktree_name:
+        wt = worktree_name
+        if len(wt) > 12:
+            wt = wt[:11] + "\u2026"
+        label = f"{label} {fg(DIM)}@ {wt}{RST}"
+    return label
+
+
+def format_party_balls(num_agents=1, tick=0):
+    """Render animated Pokemon party ball string for side effects.
+
+    Shows 6 ball slots based on number of active agents:
+    - Active balls (●) take turns pulsing in sequence
+    - Remaining slots hollow (○)
+
+    Args:
+        num_agents: Number of active agents (1-6)
+        tick: Frame tick for animation timing
+    """
+    num_agents = max(1, min(6, num_agents))
+
+    # Which ball is pulsing (cycles through active balls)
+    pulse_pos = tick % num_agents
+
+    # Colors
+    main_color = 220  # gold
+    pulse_color = 228  # bright gold
+    empty = f"{fg(DIM)}\u25cb{RST}"  # ○
+
+    # Build balls
+    balls = []
+    for i in range(6):
+        if i < num_agents:
+            if i == pulse_pos:
+                balls.append(f"{fg(pulse_color)}\u25cf{RST}")  # ◉ bright (pulsing)
+            else:
+                balls.append(f"{fg(main_color)}\u25cf{RST}")  # ● filled
+        else:
+            balls.append(empty)  # ○ hollow
+
+    return " " + "".join(balls)
 
 
 # ============================================================
@@ -148,14 +222,26 @@ def _info_lines(session, badge_override=None, line0_override=None, extra_overrid
     """
     s = session or {}
     tick = s.get("_tick", 0)
+    agent_name = s.get("agent_name", "")
+    worktree_name = s.get("worktree_name", "")
+    is_agent = bool(agent_name)
 
-    # [1] Model + badge + git + cost
+    # [0] Above info: agent label when in agent mode
+    above_info = ""
+    if is_agent:
+        above_info = format_agent_label(agent_name, worktree_name)
+
+    # [1] Model + badge + git + cost (always shows Lv.N SPECIES)
     if line0_override is not None:
         model_line = line0_override
     else:
         streak = s.get("streak_days", 0)
-        model = format_model(s.get("model_id", ""), s.get("model_name", "Opus"),
-                             streak_days=streak)
+        model = format_model(
+            s.get("model_id", ""),
+            s.get("model_name", "Opus"),
+            streak_days=streak,
+            pokemon_name=s.get("pokemon_name"),
+        )
         if badge_override is not None:
             badge = badge_override
         else:
@@ -185,29 +271,68 @@ def _info_lines(session, badge_override=None, line0_override=None, extra_overrid
     pp_label = f"{fg(SUBTLE)}ctx left{RST}"
     pp_line = f"{pp} {pp_label}"
 
-    # [4] Extra line: override > session greeting > critical HP drama > flavor > empty
+    # [4] Extra line: override > evolution > agent flavor > session greeting > critical HP drama > empty
+    pokemon_name = s.get("pokemon_name", "Pikachu")
     if extra_override is not None:
         extra = extra_override
+    elif s.get("just_evolved"):
+        # Feature 6: Evolution notification (highest priority)
+        extra = f"{fg(220)}{get_evolution_flavor(pokemon_name)}{RST}"
+    elif is_agent and not s.get("events"):
+        # Agent Teams flavor (fioenix feature)
+        extra = f"{fg(GOLD)}{get_agent_flavor(agent_name)}{RST}"
     elif "session_start" in s.get("events", []):
         # Feature 1: Session greeting on first call
-        extra = f"{fg(228)}{get_session_greeting()}{RST}"
+        extra = f"{fg(228)}{get_session_greeting(pokemon_name)}{RST}"
     elif hp_pct is not None and hp_pct < 10:
         # Feature 4: Critical HP drama flavor text
-        extra = f"{fg(RD)}{get_critical_flavor()}{RST}"
+        extra = f"{fg(RD)}{get_critical_flavor(pokemon_name)}{RST}"
     else:
         extra = ""
 
-    return ["", model_line, hp_line, pp_line, extra]
+    return [above_info, model_line, hp_line, pp_line, extra]
 
 
 # ============================================================
 # Decoration functions per reaction
 # ============================================================
 
+def _agent_sides(session, tick=0):
+    """Return party balls as side effect list if in agent mode, else None."""
+    s = session or {}
+    if not s.get("agent_name"):
+        return None
+    num_agents = s.get("num_agents", 1)
+    balls = format_party_balls(num_agents, tick)
+    return [balls, "", ""]
+
+
+def _merge_sides(base_sides, agent_sides):
+    """Merge agent side effects with reaction side effects.
+
+    Agent sides (party balls) go on row 0, reaction sides fill the rest.
+    If agent has balls on row 0, reaction effect on row 0 is replaced.
+    """
+    if agent_sides is None:
+        return base_sides
+    if base_sides is None:
+        return agent_sides
+    merged = list(agent_sides)
+    for i in range(len(base_sides)):
+        if i < len(merged) and merged[i]:
+            continue  # agent side takes priority
+        if i < len(merged):
+            merged[i] = base_sides[i]
+        else:
+            merged.append(base_sides[i])
+    return merged
+
+
 def decorate_idle(sprite_lines, tick, session=None):
     """Idle: calm, nothing notable."""
+    sides = _agent_sides(session, tick)
     info = _info_lines(session)
-    return _build(sprite_lines, info)
+    return _build(sprite_lines, info, sides=sides)
 
 
 def decorate_staging(sprite_lines, tick, session=None):
@@ -223,6 +348,7 @@ def decorate_staging(sprite_lines, tick, session=None):
         [f" {spark}", "",          f" {spark}"],
     ]
     sides = side_patterns[tick % len(side_patterns)]
+    sides = _merge_sides(sides, _agent_sides(session, tick))
 
     info = _info_lines(session)
     return _build(sprite_lines, info, sides=sides)
@@ -259,6 +385,7 @@ def decorate_committed(sprite_lines, tick, session=None):
         [f" {s1}", f" {s2}", f" {s3}"],
     ]
     sides = side_patterns[tick % len(side_patterns)]
+    sides = _merge_sides(sides, _agent_sides(session, tick))
 
     info = _info_lines(session)
     return _build(sprite_lines, info, above=above, sides=sides)
@@ -277,6 +404,7 @@ def decorate_recovered(sprite_lines, tick, session=None):
         ["",          f" {spark}", ""],
     ]
     sides = side_patterns[tick % len(side_patterns)]
+    sides = _merge_sides(sides, _agent_sides(session, tick))
 
     info = _info_lines(session)
     return _build(sprite_lines, info, sides=sides)
@@ -303,6 +431,7 @@ def decorate_thinking(sprite_lines, tick, session=None):
         [f" {b}", f" {b}", ""],
     ]
     sides = side_patterns[tick % len(side_patterns)]
+    sides = _merge_sides(sides, _agent_sides(session, tick))
 
     info = _info_lines(session)
     return _build(sprite_lines, info, above=above, sides=sides)
@@ -333,6 +462,7 @@ def decorate_compacted(sprite_lines, tick, session=None):
         [f" {z}", "",    f" {z}"],
     ]
     sides = side_patterns[z_cycle]
+    sides = _merge_sides(sides, _agent_sides(session, tick))
 
     info = _info_lines(session, badge_override=badge)
     return _build(sprite_lines, info, above=above, sides=sides)
@@ -354,6 +484,7 @@ def decorate_hit(sprite_lines, tick, session=None):
         ["",         "",         f" {drop}"],
     ]
     sides = side_patterns[tick % len(side_patterns)]
+    sides = _merge_sides(sides, _agent_sides(session, tick))
 
     info = _info_lines(session, badge_override=badge)
     return _build(sprite_lines, info, sides=sides)

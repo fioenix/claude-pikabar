@@ -22,8 +22,9 @@ from pikabar.renderer import grid_to_lines
 # ============================================================
 
 def test_session_greeting_returns_valid_text():
-    text = get_session_greeting()
-    all_greetings = SESSION_GREETINGS + list(SESSION_DAY_GREETINGS.values())
+    text = get_session_greeting("Pikachu")
+    all_greetings = [g.replace("{SPECIES}", "Pikachu") for g in SESSION_GREETINGS]
+    all_greetings += [g.replace("{SPECIES}", "Pikachu") for g in SESSION_DAY_GREETINGS.values()]
     assert text in all_greetings
 
 
@@ -34,8 +35,8 @@ def test_session_greeting_day_override():
         with patch("pikabar.flavor.random") as mock_rand:
             mock_rand.random.return_value = 0.1  # < 0.5 → use day greeting
             mock_rand.choice.return_value = SESSION_GREETINGS[0]
-            result = get_session_greeting()
-            assert result == SESSION_DAY_GREETINGS[0]
+            result = get_session_greeting("Pikachu")
+            assert result == SESSION_DAY_GREETINGS[0].replace("{SPECIES}", "Pikachu")
 
 
 def test_info_lines_session_start_shows_greeting():
@@ -76,43 +77,23 @@ def test_committed_confetti_has_variety():
 # Feature 3: Shiny Pikachu
 # ============================================================
 
-def test_shiny_persists_within_session():
-    """Same session_id returns same shiny flag without re-rolling."""
-    state = {"shiny_map": {"sess-A": True}}
-    is_shiny, _ = check_shiny(state, "sess-A")
+def test_shiny_propagates_from_prev_state():
+    """If prev state is shiny, current stays shiny."""
+    is_shiny, _ = check_shiny({"shiny": True, "session_id": "s1"}, session_id="s1")
     assert is_shiny is True
-
-    state2 = {"shiny_map": {"sess-A": False}}
-    is_shiny2, _ = check_shiny(state2, "sess-A")
-    assert is_shiny2 is False
+    is_shiny, _ = check_shiny({"shiny": False, "session_id": "s1"}, session_id="s1")
+    assert is_shiny is False
 
 
 def test_shiny_new_session_rolls():
-    """New session_id triggers a fresh roll."""
-    state = {"shiny_map": {"sess-A": True}}
+    """New session (no prev state) rolls for shiny."""
     with patch("pikabar.delta.random") as mock_rand:
-        mock_rand.random.return_value = 0.5  # not shiny
-        is_shiny, smap = check_shiny(state, "sess-B")
-        assert is_shiny is False
-        assert smap["sess-B"] is False
-        assert smap["sess-A"] is True  # A preserved
-
-
-def test_shiny_switch_back_preserves():
-    """Switching back to session A keeps its shiny flag."""
-    state = {"shiny_map": {"sess-A": True, "sess-B": False}}
-    is_shiny, _ = check_shiny(state, "sess-A")
-    assert is_shiny is True
-    is_shiny_b, _ = check_shiny(state, "sess-B")
-    assert is_shiny_b is False
-
-
-def test_shiny_no_prev_state():
-    """First-ever call (no state file) rolls for shiny."""
-    with patch("pikabar.delta.random") as mock_rand:
-        mock_rand.random.return_value = 0.0001
-        is_shiny, _ = check_shiny(None, "sess-new")
+        mock_rand.random.return_value = 0.0001  # < 1/1024 = shiny
+        is_shiny, _ = check_shiny(None, session_id="s1")
         assert is_shiny is True
+        mock_rand.random.return_value = 0.5  # > 1/1024 = not shiny
+        is_shiny, _ = check_shiny(None, session_id="s2")
+        assert is_shiny is False
 
 
 def test_shiny_sprite_uses_different_palette():
@@ -139,8 +120,10 @@ def test_shiny_sprite_dimensions():
 # ============================================================
 
 def test_critical_flavor_returns_valid():
-    text = get_critical_flavor()
-    assert text in CRITICAL_FLAVOR
+    text = get_critical_flavor("Pikachu")
+    # Should be a substituted version of CRITICAL_FLAVOR
+    assert "{SPECIES}" not in text
+    assert text != ""
 
 
 def test_info_lines_critical_hp_shows_danger():

@@ -29,18 +29,17 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pikabar.renderer import grid_to_lines
-from pikabar.sprites import (
-    IDLE_FRAMES, THINKING_SP, STAGING_SP, COMMITTED_SP,
-    RECOVERED_SP, HIT_SP, COMPACTED_SP, BALL_FRAMES,
-    SHINY_IDLE_FRAMES, SHINY_THINKING_SP, SHINY_STAGING_SP,
-    SHINY_COMMITTED_SP, SHINY_RECOVERED_SP, SHINY_HIT_SP,
-    SHINY_COMPACTED_SP,
-)
 from pikabar.info_panel import decorate
 from pikabar.delta import (
     load_state, save_state, make_snapshot,
     compute_deltas, infer_events, pick_reaction,
     check_shiny, compute_streak,
+    EVOLUTION_STAGES, init_team_state, get_pokemon_state,
+    get_species_from_stage, check_evolution,
+)
+from pikabar.sprites import (
+    POKEMON_SPECIES, get_species_sprites,
+    BALL_FRAMES,
 )
 
 # --- Temp file paths ---
@@ -51,7 +50,7 @@ GIT_CACHE_MAX_AGE = 5  # seconds
 REACTION_FPS = {
     "idle":      2.0,
     "thinking":  2.0,
-    "staging":   1.0,  # single frame, fps irrelevant
+    "staging":   1.0,
     "committed": 1.0,
     "recovered": 1.0,
     "hit":       1.0,
@@ -59,27 +58,16 @@ REACTION_FPS = {
     "faint":     6.0,
 }
 
-# --- Reaction → sprite mapping ---
-REACTION_SPRITES = {
-    "idle":      None,  # uses IDLE_FRAMES[frame % N]
-    "thinking":  THINKING_SP,
-    "staging":   STAGING_SP,
-    "committed": COMMITTED_SP,
-    "recovered": RECOVERED_SP,
-    "hit":       HIT_SP,
-    "compacted": COMPACTED_SP,
-    "faint":     None,  # uses BALL_FRAMES[frame % N]
-}
-
-SHINY_REACTION_SPRITES = {
-    "idle":      None,  # uses SHINY_IDLE_FRAMES
-    "thinking":  SHINY_THINKING_SP,
-    "staging":   SHINY_STAGING_SP,
-    "committed": SHINY_COMMITTED_SP,
-    "recovered": SHINY_RECOVERED_SP,
-    "hit":       SHINY_HIT_SP,
-    "compacted": SHINY_COMPACTED_SP,
-    "faint":     None,  # pokeball is pokeball, shiny or not
+# --- Reaction → sprite key mapping (species-aware) ---
+REACTION_KEYS = {
+    "idle":      "idle_frames",
+    "thinking":  "thinking",
+    "staging":   "staging",
+    "committed": "committed",
+    "recovered": "recovered",
+    "hit":       "hit",
+    "compacted": "compacted",
+    "faint":     "faint",
 }
 
 
@@ -161,20 +149,33 @@ def compute_hp(data):
         return max(0, int(100 - seven_d)), "7d"
 
 
-def get_sprite(reaction, shiny=False):
-    """Select the appropriate sprite grid for a reaction using time-based frame."""
+def get_sprite(reaction, shiny=False, species="pikachu"):
+    """Select the appropriate sprite grid for a reaction and species.
+
+    Uses time-based frame selection (fioenix feature) for smooth real-time
+    animation, combined with species-aware sprites (HEAD feature) for
+    multi-Pokemon evolution system.
+
+    Args:
+        reaction: Reaction name (idle, thinking, staging, committed, etc.)
+        shiny: Whether to use shiny variant
+        species: Pokemon species key (pichu, pikachu, raichu)
+
+    Returns:
+        6x15 pixel grid (list of lists)
+    """
     if reaction == "faint":
         frame = get_time_frame("faint", len(BALL_FRAMES))
         return BALL_FRAMES[frame]
-    if shiny:
-        if reaction == "idle":
-            frame = get_time_frame("idle", len(SHINY_IDLE_FRAMES))
-            return SHINY_IDLE_FRAMES[frame]
-        return SHINY_REACTION_SPRITES.get(reaction, SHINY_IDLE_FRAMES[0])
-    if reaction == "idle":
-        frame = get_time_frame("idle", len(IDLE_FRAMES))
-        return IDLE_FRAMES[frame]
-    return REACTION_SPRITES.get(reaction, IDLE_FRAMES[0])
+
+    sprites = get_species_sprites(species, shiny=shiny)
+    key = REACTION_KEYS.get(reaction, "idle_frames")
+
+    if key == "idle_frames":
+        frames = sprites["idle_frames"]
+        frame = get_time_frame("idle", len(frames))
+        return frames[frame]
+    return sprites.get(key, sprites["idle_frames"][0])
 
 
 def render_statusline(data):
@@ -193,6 +194,10 @@ def render_statusline(data):
     hp_pct, hp_window = compute_hp(data)
     context_pct = data.get("context_window", {}).get("used_percentage")
 
+    # Agent / worktree fields (absent in normal sessions)
+    agent_name = data.get("agent", {}).get("name") or ""
+    worktree_name = data.get("worktree", {}).get("name") or ""
+
     # --- Delta detection ---
     snapshot = make_snapshot(
         hp_pct, hp_window, context_pct,
@@ -202,9 +207,10 @@ def render_statusline(data):
     deltas = compute_deltas(prev_state, snapshot)
     events = infer_events(deltas, snapshot, prev_state)
 
-    # --- Feature 3: Shiny Pikachu (1/1024 per session) ---
-    session_id = data.get("session_id", "")
+    # --- Shiny per session ---
+    session_id = data.get("session_id") or data.get("sessionId", "")
     is_shiny, shiny_map = check_shiny(prev_state, session_id)
+    snapshot["shiny"] = is_shiny
     snapshot["shiny_map"] = shiny_map
     snapshot["session_id"] = session_id
 
@@ -212,6 +218,39 @@ def render_statusline(data):
     streak_days, last_active = compute_streak(prev_state)
     snapshot["streak"] = streak_days
     snapshot["last_active"] = last_active
+
+    # --- Team System ---
+    # Initialize or load team state
+    if prev_state and "team" in prev_state:
+        team_state = prev_state["team"]
+    else:
+        team_state = init_team_state()
+
+    # Get Pokemon state (handles legacy {"0": {...}} format for backwards compat)
+    slot_state = get_pokemon_state(team_state)
+
+    # Accumulate cost for this Pokemon
+    # Use cost_delta (incremental), not total cost_usd (cumulative)
+    prev_cost = slot_state.get("cost_accumulated", 0.0)
+    slot_state["cost_accumulated"] = prev_cost + deltas["cost_delta"]
+
+    # Check for evolution
+    just_evolved = False
+    evolved, new_stage = check_evolution(slot_state)
+    if evolved:
+        slot_state["evolution_stage"] = new_stage
+        slot_state["species"] = get_species_from_stage(new_stage)
+        just_evolved = True
+
+    # Update team state (flat format - no slot key wrapper)
+    team_state = slot_state
+
+    # Update snapshot - team_state is flat dict with species/evolution_stage/cost
+    snapshot["team"] = team_state
+
+    # Get species for display
+    species = slot_state["species"]
+    pokemon_name = POKEMON_SPECIES[species]["name"]
 
     save_state(snapshot, cwd)
 
@@ -225,26 +264,35 @@ def render_statusline(data):
     # Time-based tick for decorators (2 fps baseline)
     tick = int(time.time() * 2)
 
+    # Build session dict for decorators
+    # Split into: transport (raw Claude JSON), domain (pokemon state), animation
     session = {
+        # Transport fields (raw Claude Code data)
         "model_id": model_id,
         "model_name": model_name,
+        "cost_usd": cost_usd,
+        "agent_name": agent_name,
+        "worktree_name": worktree_name,
+        # Pokemon domain state
+        "species": species,
+        "pokemon_name": pokemon_name,
+        "evolution_stage": slot_state["evolution_stage"],
+        "just_evolved": just_evolved,
+        # Status domain state
         "hp_pct": hp_pct,
         "hp_window": hp_window,
         "pp_pct": pp_pct,
-        "cost_usd": cost_usd,
         "branch": branch,
         "staged": staged,
         "modified": modified,
         "events": events,
-        "deltas": deltas,
-        "reaction": reaction,
-        "shiny": is_shiny,
         "streak_days": streak_days,
+        # Animation state
         "_tick": tick,
     }
 
     # --- Select sprite and decorate ---
-    sprite_grid = get_sprite(reaction, shiny=is_shiny)
+    sprite_grid = get_sprite(reaction, shiny=is_shiny, species=species)
     sprite_lines = grid_to_lines(sprite_grid)
     output_lines = decorate(reaction, sprite_lines, tick, session=session)
 

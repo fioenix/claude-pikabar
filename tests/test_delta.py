@@ -3,6 +3,8 @@
 from pikabar.delta import (
     make_snapshot, compute_deltas, infer_events, pick_reaction,
     HP_CRITICAL_THRESHOLD, HP_DROP_LARGE,
+    check_shiny, init_team_state, get_pokemon_state,
+    get_species_from_stage, check_evolution,
 )
 
 
@@ -105,3 +107,114 @@ def test_pick_priority_faint_over_hit():
     cur = make_snapshot(5, "5h", 20, 0.10, 60000, "main", 0, 0)
     reaction = pick_reaction(["heavy_burst"], cur)
     assert reaction == "faint"
+
+
+# --- Shiny per-session tests ---
+
+def test_shiny_new_session():
+    """New session without prev_state should roll."""
+    is_shiny, shiny_map = check_shiny(None, session_id="session-a")
+    assert isinstance(is_shiny, bool)
+    assert "session-a" in shiny_map
+
+
+def test_shiny_persist_across_calls():
+    """Shiny flag persists within same session."""
+    prev_state = {"shiny_map": {"session-a": True}}
+    is_shiny, shiny_map = check_shiny(prev_state, session_id="session-a")
+    assert is_shiny is True
+    assert shiny_map["session-a"] is True
+
+
+def test_shiny_switch_session():
+    """Switching sessions preserves individual shiny flags."""
+    prev_state = {"shiny_map": {"session-a": True, "session-b": False}}
+
+    is_shiny_a, _ = check_shiny(prev_state, session_id="session-a")
+    is_shiny_b, _ = check_shiny(prev_state, session_id="session-b")
+
+    assert is_shiny_a is True
+    assert is_shiny_b is False
+
+
+def test_shiny_migration():
+    """Old single-bool shiny migrates to shiny_map."""
+    prev_state = {"shiny": True, "session_id": "old-session"}
+    is_shiny, shiny_map = check_shiny(prev_state, session_id="old-session")
+    assert is_shiny is True
+    assert shiny_map.get("old-session") is True
+
+
+# --- Team and Evolution tests ---
+
+def test_init_team_state():
+    """Team state initializes as Pichu (cost=0) - flat format."""
+    team = init_team_state()
+    assert "species" in team
+    assert team["species"] == "pichu"
+    assert team["evolution_stage"] == 0
+
+
+def test_get_pokemon_state():
+    """Get Pokemon state from team."""
+    team = init_team_state()
+    state = get_pokemon_state(team)
+    assert state["species"] == "pichu"
+    assert state["evolution_stage"] == 0
+
+
+def test_get_pokemon_state_default():
+    """Get Pokemon state returns defaults if missing."""
+    state = get_pokemon_state(None)
+    assert state["species"] == "pichu"
+    assert state["evolution_stage"] == 0
+
+
+def test_get_species_from_stage():
+    """Species derived from evolution stage."""
+    assert get_species_from_stage(0) == "pichu"
+    assert get_species_from_stage(1) == "pikachu"
+    assert get_species_from_stage(2) == "raichu"
+
+
+def test_derive_species_from_cost():
+    """Species derived from accumulated cost thresholds."""
+    from pikabar.delta import derive_species_from_cost
+    assert derive_species_from_cost(0) == "pichu"
+    assert derive_species_from_cost(100) == "pichu"
+    assert derive_species_from_cost(149) == "pichu"
+    assert derive_species_from_cost(150) == "pikachu"
+    assert derive_species_from_cost(200) == "pikachu"
+    assert derive_species_from_cost(299) == "pikachu"
+    assert derive_species_from_cost(300) == "raichu"
+    assert derive_species_from_cost(500) == "raichu"
+
+
+def test_check_evolution_below_threshold():
+    """No evolution below cost threshold."""
+    slot = {"species": "pichu", "evolution_stage": 0, "cost_accumulated": 100.0}
+    evolved, _ = check_evolution(slot)
+    assert evolved is False
+
+
+def test_check_evolution_at_pikachu_threshold():
+    """Evolution triggers at $150 threshold (Pichu -> Pikachu)."""
+    slot = {"species": "pichu", "evolution_stage": 0, "cost_accumulated": 150.0}
+    evolved, new_stage = check_evolution(slot)
+    assert evolved is True
+    assert new_stage == 1  # Pikachu
+
+
+def test_check_evolution_at_raichu_threshold():
+    """Evolution triggers at $300 threshold (Pikachu -> Raichu)."""
+    slot = {"species": "pikachu", "evolution_stage": 1, "cost_accumulated": 300.0}
+    evolved, new_stage = check_evolution(slot)
+    assert evolved is True
+    assert new_stage == 2  # Raichu
+
+
+def test_check_evolution_already_final():
+    """No evolution for Raichu (final form)."""
+    slot = {"species": "raichu", "evolution_stage": 2, "cost_accumulated": 500.0}
+    evolved, _ = check_evolution(slot)
+    assert evolved is False

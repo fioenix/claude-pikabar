@@ -19,6 +19,11 @@ SLY = 215   # Shiny light (lighter orange)
 SDY = 166   # Shiny dark (deep orange shadows)
 SRD = 197   # Shiny cheeks (magenta-pink instead of red)
 
+# --- Raichu colors ---
+SOR = 202   # Shiny orange (lighter orange for shiny raichu)
+SLY2 = 221  # Shiny light yellow (alternate for raichu)
+SOR2 = 172  # Shiny dark orange
+
 # --- Pokeball colors ---
 PW = 255   # Pokeball white
 PR = 196   # Pokeball red

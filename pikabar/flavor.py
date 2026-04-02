@@ -15,43 +15,43 @@ from datetime import datetime
 
 FLAVOR = {
     "idle": [
-        "What will PIKACHU do?",
-        "PIKACHU is waiting...",
+        "What will {SPECIES} do?",
+        "{SPECIES} is waiting...",
         "Ready for battle.",
         "Standing by...",
-        "PIKACHU is alert.",
+        "{SPECIES} is alert.",
         "Awaiting orders...",
         "The field is quiet.",
-        "PIKACHU looks around.",
+        "{SPECIES} looks around.",
     ],
     "thinking": [
-        "PIKACHU used FOCUS.",
-        "PIKACHU is thinking...",
-        "PIKACHU used DETECT!",
+        "{SPECIES} used FOCUS.",
+        "{SPECIES} is thinking...",
+        "{SPECIES} used DETECT!",
         "Analyzing the field...",
         "A careful approach...",
-        "PIKACHU is strategizing.",
+        "{SPECIES} is strategizing.",
         "Weighing the options...",
         "Deep in thought...",
     ],
     "staging": [
-        "PIKACHU is on alert!",
+        "{SPECIES} is on alert!",
         "Something's happening...",
-        "PIKACHU senses change!",
+        "{SPECIES} senses change!",
         "The field is shifting.",
-        "PIKACHU used AGILITY!",
+        "{SPECIES} used AGILITY!",
         "Changes detected!",
         "Activity in the area...",
-        "PIKACHU perked up!",
+        "{SPECIES} perked up!",
     ],
     "committed": [
-        "PIKACHU gained EXP!",
-        "PIKACHU leveled up!",
+        "{SPECIES} gained EXP!",
+        "{SPECIES} leveled up!",
         "Commit captured!",
-        "PIKACHU is pleased!",
+        "{SPECIES} is pleased!",
         "A wild commit appeared!",
         "Saved the game!",
-        "PIKACHU used CELEBRATE!",
+        "{SPECIES} used CELEBRATE!",
         "Victory fanfare!",
     ],
     "recovered": [
@@ -59,40 +59,40 @@ FLAVOR = {
         "Energy recovered!",
         "Rate limit reset!",
         "Back to full power!",
-        "PIKACHU recovered fully.",
+        "{SPECIES} recovered fully.",
         "Moves fully recharged!",
         "Feeling refreshed!",
-        "PIKACHU is revitalized!",
+        "{SPECIES} is revitalized!",
     ],
     "compacted": [
-        "PIKACHU woke up!",
+        "{SPECIES} woke up!",
         "...Where am I?",
         "Memory was cleared!",
         "Hm? What happened?",
-        "PIKACHU is confused!",
+        "{SPECIES} is confused!",
         "Context was compacted.",
-        "PIKACHU used REST!",
+        "{SPECIES} used REST!",
         "Recovering memories...",
     ],
     "hit": [
         "It's super effective!",
-        "PIKACHU took damage!",
-        "PIKACHU flinched!",
+        "{SPECIES} took damage!",
+        "{SPECIES} flinched!",
         "A heavy blow!",
         "Rate limit pressure!",
-        "PIKACHU is struggling.",
+        "{SPECIES} is struggling.",
         "That really hurt...",
         "HP dropping fast!",
     ],
     "faint": [
-        "PIKACHU can't move!",
+        "{SPECIES} can't move!",
         "It's fully paralyzed!",
         "Out of PP entirely.",
         "A forced retreat...",
         "Waiting to recover...",
-        "PIKACHU was recalled.",
+        "{SPECIES} was recalled.",
         "The trainer waits...",
-        "PIKACHU needs time.",
+        "{SPECIES} needs time.",
     ],
 }
 
@@ -104,26 +104,26 @@ HP_THRESHOLD = {
     50: [
         "Moves are running low...",
         "Conserve your PP.",
-        "PIKACHU is slowing down.",
+        "{SPECIES} is slowing down.",
     ],
     25: [
         "Not many moves remain.",
-        "PIKACHU is struggling.",
+        "{SPECIES} is struggling.",
         "PP dangerously low!",
     ],
     10: [
         "Almost out of moves!",
         "One last stand...",
-        "PIKACHU can barely move.",
+        "{SPECIES} can barely move.",
     ],
     0: [
-        "PIKACHU can't move!",
+        "{SPECIES} can't move!",
         "Out of PP entirely.",
         "Paralysis took hold.",
     ],
     -1: [  # HP restored (special key)
         "Moves fully recharged!",
-        "PIKACHU recovered fully.",
+        "{SPECIES} recovered fully.",
         "Back to full power!",
     ],
 }
@@ -134,7 +134,7 @@ HP_THRESHOLD = {
 
 DATE_EGGS = {
     (2, 27): "Happy Pokemon Day!",
-    (3, 14): "PIKACHU used PI ATTACK!",
+    (3, 14): "{SPECIES} used PI ATTACK!",
     (4, 1):  "DITTO used TRANSFORM!",
     (5, 4):  "Use the FORCE, Pika!",
     (10, 31): "BOO! GENGAR appeared!",
@@ -143,23 +143,24 @@ DATE_EGGS = {
 }
 
 COST_MILESTONES = {
-    1:   "PIKACHU earned 100P!",
+    1:   "{SPECIES} earned 100P!",
     5:   "That's 500P spent!",
-    10:  "Evolved into RAICHU?!",
+    150: "Evolved into PIKACHU!",
+    300: "Evolved into RAICHU!",
     25:  "PROF OAK: Impressive!",
     50:  "Elite Four material!",
-    100: "PIKACHU is CHAMPION!",
+    100: "{SPECIES} is CHAMPION!",
 }
 
 RARE_RANDOM = [
-    "A shiny PIKACHU appeared!",
+    "A shiny {SPECIES} appeared!",
     "Wild MISSINGNO. appeared!",
-    "PIKACHU learned FLY!",
+    "{SPECIES} learned FLY!",
     "Found a RARE CANDY!",
-    "PIKACHU used VOLT TACKLE!",
+    "{SPECIES} used VOLT TACKLE!",
     "A wild MEW appeared!",
     "Master Ball acquired!",
-    "PIKACHU wants to learn...",
+    "{SPECIES} wants to learn...",
     "Old Man glitch activated!",
     "Pika Pika!",
 ]
@@ -171,23 +172,58 @@ NUMBER_EGGS = {
 }
 
 # ============================================================
+# Evolution flavor (Feature 6)
+# ============================================================
+
+EVOLUTION_FLAVOR = [
+    "What? {SPECIES} evolved!",
+    "{SPECIES} grew to Lv.{N}!",
+    "Wow! {SPECIES} evolved!",
+    "Evolution complete!",
+]
+
+
+def substitute_species(text, species_name="Pikachu"):
+    """Replace {SPECIES} placeholder with actual Pokemon name.
+
+    Falls back gracefully if placeholder missing or already substituted.
+    """
+    if not species_name:
+        species_name = "Pikachu"
+    result = text.replace("{SPECIES}", species_name)
+    # Safety: if still has placeholder variants, clean up
+    result = result.replace("{POKEMON}", species_name)
+    return result
+
+
+# ============================================================
 # Session greetings (first call, no previous state)
 # ============================================================
 
+def get_session_greeting(pokemon_name="Pikachu"):
+    """Return a greeting for the first statusline call of a session."""
+    now = datetime.now()
+    day = now.weekday()
+    if day in SESSION_DAY_GREETINGS and random.random() < 0.5:
+        text = SESSION_DAY_GREETINGS[day]
+    else:
+        text = random.choice(SESSION_GREETINGS)
+    return substitute_species(text, pokemon_name)
+
 SESSION_GREETINGS = [
-    "PIKACHU, I choose you!",
+    "{SPECIES}, I choose you!",
     "A wild SESSION appeared!",
     "Trainer entered the arena!",
     "Let the battle begin!",
-    "PIKACHU is ready to go!",
+    "{SPECIES} is ready to go!",
     "Time to code!",
     "A new adventure starts!",
-    "PIKACHU joined the party!",
+    "{SPECIES} joined the party!",
 ]
 
 SESSION_DAY_GREETINGS = {
     0: "Monday. Battle stations!",   # Monday
-    4: "PIKACHU used FRIDAY!",       # Friday
+    4: "{SPECIES} used FRIDAY!",       # Friday
     5: "Weekend coding? Bold.",      # Saturday
     6: "Sunday session? Respect.",   # Sunday
 }
@@ -198,32 +234,52 @@ SESSION_DAY_GREETINGS = {
 
 CRITICAL_FLAVOR = [
     "It's do or die!",
-    "PIKACHU can barely stand!",
+    "{SPECIES} can barely stand!",
     "One last chance...",
     "Critical HP! Danger!",
-    "PIKACHU is struggling!",
+    "{SPECIES} is struggling!",
     "Almost out of moves!",
-    "PIKACHU used ENDURE!",
+    "{SPECIES} used ENDURE!",
     "Hanging by a thread!",
 ]
 
 
-def get_session_greeting():
-    """Return a greeting for the first statusline call of a session."""
-    now = datetime.now()
-    day = now.weekday()
-    if day in SESSION_DAY_GREETINGS and random.random() < 0.5:
-        return SESSION_DAY_GREETINGS[day]
-    return random.choice(SESSION_GREETINGS)
-
-
-def get_critical_flavor():
+def get_critical_flavor(pokemon_name="Pikachu"):
     """Return dramatic flavor text for critical HP (<10%)."""
-    return random.choice(CRITICAL_FLAVOR)
+    text = random.choice(CRITICAL_FLAVOR)
+    return substitute_species(text, pokemon_name)
+
+
+# ============================================================
+# Agent Teams flavor (agent mode)
+# ============================================================
+
+AGENT_FLAVOR = [
+    "AGENT deployed!",
+    "Running recon...",
+    "Awaiting orders...",
+    "On mission.",
+    "Syncing with team...",
+    "Team formation!",
+    "Specialist active.",
+    "Agent standing by.",
+]
+
+
+def get_agent_flavor(agent_name=""):
+    """Return flavor text for agent mode. Uses agent name if short enough."""
+    if agent_name and len(agent_name) <= 10:
+        options = [
+            f"{agent_name.upper()} deployed!",
+            f"{agent_name.upper()} on mission.",
+            f"Go, {agent_name.upper()}!",
+        ]
+        return random.choice(options + AGENT_FLAVOR)
+    return random.choice(AGENT_FLAVOR)
 
 
 def get_flavor_text(state, hp_pct=None, cost_usd=0.0, duration_min=0,
-                    tick=0, chance=0.08):
+                    tick=0, chance=0.08, pokemon_name="Pikachu"):
     """Get flavor text for the current reaction state.
 
     Priority order:
@@ -242,11 +298,11 @@ def get_flavor_text(state, hp_pct=None, cost_usd=0.0, duration_min=0,
     if tick == 0:
         key = (now.month, now.day)
         if key in DATE_EGGS:
-            return DATE_EGGS[key], True
+            return substitute_species(DATE_EGGS[key], pokemon_name), True
 
     # 2. Rare random (0.5%)
     if random.random() < 0.005:
-        return random.choice(RARE_RANDOM), True
+        return substitute_species(random.choice(RARE_RANDOM), pokemon_name), True
 
     # 3. Number eggs (exact HP match)
     if hp_pct is not None and hp_pct in NUMBER_EGGS:
@@ -258,6 +314,13 @@ def get_flavor_text(state, hp_pct=None, cost_usd=0.0, duration_min=0,
 
     # 5. State flavor (default chance)
     if random.random() < chance and state in FLAVOR:
-        return random.choice(FLAVOR[state]), False
+        return substitute_species(random.choice(FLAVOR[state]), pokemon_name), False
 
     return "", False
+
+
+def get_evolution_flavor(pokemon_name="Pikachu", level="?"):
+    """Return flavor text for evolution event."""
+    text = random.choice(EVOLUTION_FLAVOR)
+    text = text.replace("{N}", str(level))
+    return substitute_species(text, pokemon_name)
