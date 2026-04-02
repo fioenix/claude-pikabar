@@ -148,11 +148,11 @@ def test_shiny_migration():
 # --- Team and Evolution tests ---
 
 def test_init_team_state():
-    """Team state initializes with single slot as Pichu (cost=0)."""
+    """Team state initializes as Pichu (cost=0) - flat format."""
     team = init_team_state()
-    assert "0" in team
-    assert team["0"]["species"] == "pichu"
-    assert team["0"]["evolution_stage"] == 0
+    assert "species" in team
+    assert team["species"] == "pichu"
+    assert team["evolution_stage"] == 0
 
 
 def test_get_pokemon_state():

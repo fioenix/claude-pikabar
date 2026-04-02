@@ -160,7 +160,7 @@ def _safe_sub(a, b):
 
 
 # ============================================================
-# Team System — Single species pool with evolution
+# Pokemon Evolution System — single species with cost-based evolution
 # All Pokemon start as Pichu and evolve based on cumulative cost
 # Cost thresholds: $0-149=Pichu, $150-299=Pikachu, $300+=Raichu
 # ============================================================
@@ -172,9 +172,6 @@ COST_THRESHOLDS = {
     150: "pikachu",  # cost >= 150 → Pikachu
     300: "raichu",   # cost >= 300 → Raichu
 }
-
-# Single team slot for single species pool
-TEAM_SLOT_KEY = "0"
 
 
 def derive_species_from_cost(cost):
@@ -214,32 +211,44 @@ def derive_stage_from_species(species):
 
 
 def init_team_state():
-    """Initialize team state with single slot starting as Pichu."""
+    """Initialize team state for single Pokemon starting as Pichu."""
     return {
-        TEAM_SLOT_KEY: {
-            "species": "pichu",
-            "evolution_stage": 0,  # 0=pichu, 1=pikachu, 2=raichu
-            "cost_accumulated": 0.0,
-        }
+        "species": "pichu",
+        "evolution_stage": 0,  # 0=pichu, 1=pikachu, 2=raichu
+        "cost_accumulated": 0.0,
     }
 
 
 def get_pokemon_state(team_state):
     """Get the Pokemon state from team state.
 
+    Handles both flat format (direct dict) and legacy slot format (dict["0"]).
+    For backwards compatibility with existing saved states.
+
     Args:
-        team_state: Dict of team slot → Pokemon state
+        team_state: Pokemon state dict (flat) or legacy {slot_key: state} format
 
     Returns:
         Pokemon state dict with species, evolution_stage, cost_accumulated
     """
-    if team_state is None or TEAM_SLOT_KEY not in team_state:
+    if team_state is None:
         return {
             "species": "pichu",
             "evolution_stage": 0,
             "cost_accumulated": 0.0,
         }
-    return team_state[TEAM_SLOT_KEY]
+    # Handle legacy slot format: {"0": {...}}
+    if "0" in team_state:
+        return team_state["0"]
+    # Flat format (direct state)
+    if "species" in team_state:
+        return team_state
+    # Fallback
+    return {
+        "species": "pichu",
+        "evolution_stage": 0,
+        "cost_accumulated": 0.0,
+    }
 
 
 def get_species_from_stage(stage):

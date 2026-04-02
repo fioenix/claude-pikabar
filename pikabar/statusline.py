@@ -197,7 +197,6 @@ def render_statusline(data):
     # Agent / worktree fields (absent in normal sessions)
     agent_name = data.get("agent", {}).get("name") or ""
     worktree_name = data.get("worktree", {}).get("name") or ""
-    worktree_branch = data.get("worktree", {}).get("branch") or ""
 
     # --- Delta detection ---
     snapshot = make_snapshot(
@@ -227,7 +226,7 @@ def render_statusline(data):
     else:
         team_state = init_team_state()
 
-    # Get Pokemon state
+    # Get Pokemon state (handles legacy {"0": {...}} format for backwards compat)
     slot_state = get_pokemon_state(team_state)
 
     # Accumulate cost for this Pokemon
@@ -243,13 +242,11 @@ def render_statusline(data):
         slot_state["species"] = get_species_from_stage(new_stage)
         just_evolved = True
 
-    # Update team state
-    team_state["0"] = slot_state
+    # Update team state (flat format - no slot key wrapper)
+    team_state = slot_state
 
-    # Update snapshot
+    # Update snapshot - team_state is flat dict with species/evolution_stage/cost
     snapshot["team"] = team_state
-    snapshot["species"] = slot_state["species"]
-    snapshot["evolution_stage"] = slot_state["evolution_stage"]
 
     # Get species for display
     species = slot_state["species"]
@@ -267,28 +264,30 @@ def render_statusline(data):
     # Time-based tick for decorators (2 fps baseline)
     tick = int(time.time() * 2)
 
+    # Build session dict for decorators
+    # Split into: transport (raw Claude JSON), domain (pokemon state), animation
     session = {
+        # Transport fields (raw Claude Code data)
         "model_id": model_id,
         "model_name": model_name,
+        "cost_usd": cost_usd,
+        "agent_name": agent_name,
+        "worktree_name": worktree_name,
+        # Pokemon domain state
         "species": species,
         "pokemon_name": pokemon_name,
         "evolution_stage": slot_state["evolution_stage"],
         "just_evolved": just_evolved,
+        # Status domain state
         "hp_pct": hp_pct,
         "hp_window": hp_window,
         "pp_pct": pp_pct,
-        "cost_usd": cost_usd,
         "branch": branch,
         "staged": staged,
         "modified": modified,
         "events": events,
-        "deltas": deltas,
-        "reaction": reaction,
-        "shiny": is_shiny,
         "streak_days": streak_days,
-        "agent_name": agent_name,
-        "worktree_name": worktree_name,
-        "worktree_branch": worktree_branch,
+        # Animation state
         "_tick": tick,
     }
 

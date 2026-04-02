@@ -15,6 +15,7 @@ Reaction sprites:
   BALL_FRAMES   — pokeball wobble (faint/ratelimited)
 """
 
+from functools import lru_cache
 from .palette import Y, LY, DY, BK, RD, W, PW, PR, OR, BR, SY, SLY, SDY, SRD, SOR, SLY2, SOR2
 
 _ = None  # transparent pixel
@@ -24,6 +25,7 @@ _ = None  # transparent pixel
 # Pikachu sprite factory
 # ============================================================
 
+@lru_cache(maxsize=32)
 def make_pika(left_eye=(BK, W), right_eye=(BK, W),
               tail_variant=0, feet_variant=0):
     """Generate a Pikachu grid with configurable eyes, tail, feet.
@@ -95,6 +97,7 @@ def make_pika(left_eye=(BK, W), right_eye=(BK, W),
 # Pichu sprite factory — smaller, cuter, no red cheeks
 # ============================================================
 
+@lru_cache(maxsize=32)
 def make_pichu(left_eye=(BK, W), right_eye=(BK, W),
                tail_variant=0, feet_variant=0):
     """Generate a Pichu grid — baby Pokemon, big eyes, no cheeks.
@@ -162,6 +165,7 @@ def make_pichu(left_eye=(BK, W), right_eye=(BK, W),
 # Raichu sprite factory — evolved form, orange palette, sleek
 # ============================================================
 
+@lru_cache(maxsize=32)
 def make_raichu(left_eye=(BK, W), right_eye=(BK, W),
                 tail_variant=0, feet_variant=0):
     """Generate a Raichu grid — sleek orange body, long pointed ears, lightning tail.
@@ -232,6 +236,52 @@ def make_raichu(left_eye=(BK, W), right_eye=(BK, W),
 
 
 # ============================================================
+# Shiny sprite factories (mutate base sprite colors)
+# ============================================================
+
+@lru_cache(maxsize=32)
+def make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W),
+                    tail_variant=0, feet_variant=0):
+    """Shiny Pikachu — orange palette swap, like the games."""
+    grid = make_pika(left_eye, right_eye, tail_variant, feet_variant)
+    # Swap palette: Y→SY, LY→SLY, DY→SDY, RD→SRD
+    COLOR_MAP = {Y: SY, LY: SLY, DY: SDY, RD: SRD}
+    for r in range(len(grid)):
+        for c in range(len(grid[r])):
+            if grid[r][c] in COLOR_MAP:
+                grid[r][c] = COLOR_MAP[grid[r][c]]
+    return grid
+
+
+@lru_cache(maxsize=32)
+def make_shiny_pichu(left_eye=(BK, W), right_eye=(BK, W),
+                     tail_variant=0, feet_variant=0):
+    """Shiny Pichu — same as regular (already yellowish)."""
+    grid = make_pichu(left_eye, right_eye, tail_variant, feet_variant)
+    # Swap palette: Y→SY, LY→SLY, DY→SDY
+    COLOR_MAP = {Y: SY, LY: SLY, DY: SDY}
+    for r in range(len(grid)):
+        for c in range(len(grid[r])):
+            if grid[r][c] in COLOR_MAP:
+                grid[r][c] = COLOR_MAP[grid[r][c]]
+    return grid
+
+
+@lru_cache(maxsize=32)
+def make_shiny_raichu(left_eye=(BK, W), right_eye=(BK, W),
+                      tail_variant=0, feet_variant=0):
+    """Shiny Raichu — golden/tan palette swap."""
+    grid = make_raichu(left_eye, right_eye, tail_variant, feet_variant)
+    # Swap palette: OR→SOR, LY→SLY2, DY→SOR2
+    COLOR_MAP = {OR: SOR, LY: SLY2, DY: SOR2}
+    for r in range(len(grid)):
+        for c in range(len(grid[r])):
+            if grid[r][c] in COLOR_MAP:
+                grid[r][c] = COLOR_MAP[grid[r][c]]
+    return grid
+
+
+# ============================================================
 # Pokeball sprite factory
 # ============================================================
 
@@ -245,6 +295,7 @@ def _shift_row(row, n):
         return row[-n:] + [None] * (-n)
 
 
+@lru_cache(maxsize=8)
 def make_pokeball(tilt=0):
     """Generate a Pokeball grid (7 rows x 11 cols).
 
@@ -271,33 +322,147 @@ def make_pokeball(tilt=0):
 
 
 # ============================================================
-# Reaction sprites
+# Reaction sprites factory (cached)
 # ============================================================
 
-# --- Idle: subtle life cycle (frame % 3) ---
-IDLE_FRAMES = [
-    make_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1),  # normal
-    make_pika(left_eye=(W, BK), right_eye=(W, BK), tail_variant=0, feet_variant=1),  # glancing
-    make_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=1, feet_variant=1),  # tail sway
-]
+@lru_cache(maxsize=64)
+def _make_reaction_frames(species_key):
+    """Generate all reaction sprites for a species. Cached per species."""
+    # Base eye configurations
+    eyes_normal = (BK, W)
+    eyes_glance = (W, BK)
+    eyes_pain = (Y, DY)
 
-# --- Thinking: focused, alert ---
-THINKING_SP = make_pika(left_eye=(W, BK), right_eye=(W, BK), tail_variant=1, feet_variant=0)
+    # Get the factory function
+    if species_key == "pichu":
+        factory = make_pichu
+    elif species_key == "raichu":
+        factory = make_raichu
+    else:
+        factory = make_pika
 
-# --- Staging: alert (same sprite as thinking, differentiated by decoration) ---
-STAGING_SP = THINKING_SP
+    # Idle: subtle life cycle (frame % 3)
+    idle = [
+        factory(left_eye=eyes_normal, right_eye=eyes_normal, tail_variant=0, feet_variant=1),  # normal
+        factory(left_eye=eyes_glance, right_eye=eyes_glance, tail_variant=0, feet_variant=1),  # glancing
+        factory(left_eye=eyes_normal, right_eye=eyes_normal, tail_variant=1, feet_variant=1),  # tail sway
+    ]
 
-# --- Committed: winking, proud ---
-COMMITTED_SP = make_pika(left_eye=(BK, W), right_eye=(Y, DY), tail_variant=1, feet_variant=0)
+    # All other reactions
+    thinking = factory(left_eye=eyes_glance, right_eye=eyes_glance, tail_variant=1, feet_variant=0)
+    committed = factory(left_eye=eyes_normal, right_eye=(Y, DY), tail_variant=1, feet_variant=0)
+    recovered = factory(left_eye=eyes_normal, right_eye=eyes_normal, tail_variant=0, feet_variant=1)
+    hit = factory(left_eye=eyes_pain, right_eye=eyes_pain, tail_variant=0, feet_variant=1)
+    compacted = factory(left_eye=eyes_pain, right_eye=eyes_pain, tail_variant=0, feet_variant=0)
 
-# --- Recovered: normal, relaxed ---
-RECOVERED_SP = make_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1)
+    return {
+        "idle_frames": idle,
+        "thinking": thinking,
+        "staging": thinking,  # same as thinking
+        "committed": committed,
+        "recovered": recovered,
+        "hit": hit,
+        "compacted": compacted,
+    }
 
-# --- Hit: eyes closed (pain) ---
-HIT_SP = make_pika(left_eye=(Y, DY), right_eye=(Y, DY), tail_variant=0, feet_variant=1)
 
-# --- Compacted: eyes closed (sleeping) ---
-COMPACTED_SP = make_pika(left_eye=(Y, DY), right_eye=(Y, DY), tail_variant=0, feet_variant=0)
+@lru_cache(maxsize=64)
+def _make_shiny_reaction_frames(species_key):
+    """Generate all shiny reaction sprites for a species. Cached per species."""
+    # Base eye configurations
+    eyes_normal = (BK, W)
+    eyes_glance = (W, BK)
+
+    # Get the shiny factory function
+    if species_key == "pichu":
+        shiny_factory = make_shiny_pichu
+        eyes_pain = (SY, SDY)
+    elif species_key == "raichu":
+        shiny_factory = make_shiny_raichu
+        eyes_pain = (SOR, SOR2)
+    else:
+        shiny_factory = make_shiny_pika
+        eyes_pain = (SY, SDY)
+
+    # Idle: subtle life cycle
+    idle = [
+        shiny_factory(left_eye=eyes_normal, right_eye=eyes_normal, tail_variant=0, feet_variant=1),
+        shiny_factory(left_eye=eyes_glance, right_eye=eyes_glance, tail_variant=0, feet_variant=1),
+        shiny_factory(left_eye=eyes_normal, right_eye=eyes_normal, tail_variant=1, feet_variant=1),
+    ]
+
+    # All other reactions
+    thinking = shiny_factory(left_eye=eyes_glance, right_eye=eyes_glance, tail_variant=1, feet_variant=0)
+    committed = shiny_factory(left_eye=eyes_normal, right_eye=eyes_pain, tail_variant=1, feet_variant=0)
+    recovered = shiny_factory(left_eye=eyes_normal, right_eye=eyes_normal, tail_variant=0, feet_variant=1)
+    hit = shiny_factory(left_eye=eyes_pain, right_eye=eyes_pain, tail_variant=0, feet_variant=1)
+    compacted = shiny_factory(left_eye=eyes_pain, right_eye=eyes_pain, tail_variant=0, feet_variant=0)
+
+    return {
+        "idle_frames": idle,
+        "thinking": thinking,
+        "staging": thinking,
+        "committed": committed,
+        "recovered": recovered,
+        "hit": hit,
+        "compacted": compacted,
+    }
+
+
+# --- Backwards-compat: Pikachu reaction sprites (module-level for direct import) ---
+_IDLE_PIKA = _make_reaction_frames("pikachu")
+IDLE_FRAMES = _IDLE_PIKA["idle_frames"]
+THINKING_SP = _IDLE_PIKA["thinking"]
+STAGING_SP = _IDLE_PIKA["staging"]
+COMMITTED_SP = _IDLE_PIKA["committed"]
+RECOVERED_SP = _IDLE_PIKA["recovered"]
+HIT_SP = _IDLE_PIKA["hit"]
+COMPACTED_SP = _IDLE_PIKA["compacted"]
+
+_SHINY_PIKA = _make_shiny_reaction_frames("pikachu")
+SHINY_IDLE_FRAMES = _SHINY_PIKA["idle_frames"]
+SHINY_THINKING_SP = _SHINY_PIKA["thinking"]
+SHINY_STAGING_SP = _SHINY_PIKA["staging"]
+SHINY_COMMITTED_SP = _SHINY_PIKA["committed"]
+SHINY_RECOVERED_SP = _SHINY_PIKA["recovered"]
+SHINY_HIT_SP = _SHINY_PIKA["hit"]
+SHINY_COMPACTED_SP = _SHINY_PIKA["compacted"]
+
+_PICHU_REACTIONS = _make_reaction_frames("pichu")
+PICHU_IDLE_FRAMES = _PICHU_REACTIONS["idle_frames"]
+PICHU_THINKING_SP = _PICHU_REACTIONS["thinking"]
+PICHU_STAGING_SP = _PICHU_REACTIONS["staging"]
+PICHU_COMMITTED_SP = _PICHU_REACTIONS["committed"]
+PICHU_RECOVERED_SP = _PICHU_REACTIONS["recovered"]
+PICHU_HIT_SP = _PICHU_REACTIONS["hit"]
+PICHU_COMPACTED_SP = _PICHU_REACTIONS["compacted"]
+
+_SHINY_PICHU = _make_shiny_reaction_frames("pichu")
+SHINY_PICHU_IDLE_FRAMES = _SHINY_PICHU["idle_frames"]
+SHINY_PICHU_THINKING_SP = _SHINY_PICHU["thinking"]
+SHINY_PICHU_STAGING_SP = _SHINY_PICHU["staging"]
+SHINY_PICHU_COMMITTED_SP = _SHINY_PICHU["committed"]
+SHINY_PICHU_RECOVERED_SP = _SHINY_PICHU["recovered"]
+SHINY_PICHU_HIT_SP = _SHINY_PICHU["hit"]
+SHINY_PICHU_COMPACTED_SP = _SHINY_PICHU["compacted"]
+
+_RAICHU_REACTIONS = _make_reaction_frames("raichu")
+RAICHU_IDLE_FRAMES = _RAICHU_REACTIONS["idle_frames"]
+RAICHU_THINKING_SP = _RAICHU_REACTIONS["thinking"]
+RAICHU_STAGING_SP = _RAICHU_REACTIONS["staging"]
+RAICHU_COMMITTED_SP = _RAICHU_REACTIONS["committed"]
+RAICHU_RECOVERED_SP = _RAICHU_REACTIONS["recovered"]
+RAICHU_HIT_SP = _RAICHU_REACTIONS["hit"]
+RAICHU_COMPACTED_SP = _RAICHU_REACTIONS["compacted"]
+
+_SHINY_RAICHU = _make_shiny_reaction_frames("raichu")
+SHINY_RAICHU_IDLE_FRAMES = _SHINY_RAICHU["idle_frames"]
+SHINY_RAICHU_THINKING_SP = _SHINY_RAICHU["thinking"]
+SHINY_RAICHU_STAGING_SP = _SHINY_RAICHU["staging"]
+SHINY_RAICHU_COMMITTED_SP = _SHINY_RAICHU["committed"]
+SHINY_RAICHU_RECOVERED_SP = _SHINY_RAICHU["recovered"]
+SHINY_RAICHU_HIT_SP = _SHINY_RAICHU["hit"]
+SHINY_RAICHU_COMPACTED_SP = _SHINY_RAICHU["compacted"]
 
 # --- Faint: Pokeball wobble ---
 _B0 = make_pokeball(tilt=0)
@@ -309,146 +474,6 @@ BALL_FRAMES = [
     _BL, _BL,    # lean left (hold)
     _B0,          # pass through center
 ]
-
-
-# ============================================================
-# Backwards-compat aliases (used by demo.py / animator.py)
-# ============================================================
-
-THINK_FRAMES = IDLE_FRAMES
-COMPACT_FRAME = COMPACTED_SP
-
-
-# ============================================================
-# Shiny Pikachu variants (Feature 3: 1/500 per session)
-# ============================================================
-
-def make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W),
-                    tail_variant=0, feet_variant=0):
-    """Shiny Pikachu — orange palette swap, like the games."""
-    # Reuse make_pika but patch colors after generation
-    grid = make_pika(left_eye, right_eye, tail_variant, feet_variant)
-    # Swap palette: Y→SY, LY→SLY, DY→SDY, RD→SRD
-    COLOR_MAP = {Y: SY, LY: SLY, DY: SDY, RD: SRD}
-    for r in range(len(grid)):
-        for c in range(len(grid[r])):
-            if grid[r][c] in COLOR_MAP:
-                grid[r][c] = COLOR_MAP[grid[r][c]]
-    return grid
-
-
-SHINY_IDLE_FRAMES = [
-    make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1),
-    make_shiny_pika(left_eye=(W, BK), right_eye=(W, BK), tail_variant=0, feet_variant=1),
-    make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=1, feet_variant=1),
-]
-
-SHINY_THINKING_SP = make_shiny_pika(left_eye=(W, BK), right_eye=(W, BK), tail_variant=1, feet_variant=0)
-SHINY_STAGING_SP = SHINY_THINKING_SP
-SHINY_COMMITTED_SP = make_shiny_pika(left_eye=(BK, W), right_eye=(SY, SDY), tail_variant=1, feet_variant=0)
-SHINY_RECOVERED_SP = make_shiny_pika(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1)
-SHINY_HIT_SP = make_shiny_pika(left_eye=(SY, SDY), right_eye=(SY, SDY), tail_variant=0, feet_variant=1)
-SHINY_COMPACTED_SP = make_shiny_pika(left_eye=(SY, SDY), right_eye=(SY, SDY), tail_variant=0, feet_variant=0)
-
-
-# ============================================================
-# Pichu reaction sprites
-# ============================================================
-
-PICHU_IDLE_FRAMES = [
-    make_pichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1),
-    make_pichu(left_eye=(W, BK), right_eye=(W, BK), tail_variant=0, feet_variant=1),
-    make_pichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=1, feet_variant=1),
-]
-
-PICHU_THINKING_SP = make_pichu(left_eye=(W, BK), right_eye=(W, BK), tail_variant=1, feet_variant=0)
-PICHU_STAGING_SP = PICHU_THINKING_SP
-PICHU_COMMITTED_SP = make_pichu(left_eye=(BK, W), right_eye=(Y, DY), tail_variant=1, feet_variant=0)
-PICHU_RECOVERED_SP = make_pichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1)
-PICHU_HIT_SP = make_pichu(left_eye=(Y, DY), right_eye=(Y, DY), tail_variant=0, feet_variant=1)
-PICHU_COMPACTED_SP = make_pichu(left_eye=(Y, DY), right_eye=(Y, DY), tail_variant=0, feet_variant=0)
-
-
-# ============================================================
-# Raichu reaction sprites
-# ============================================================
-
-RAICHU_IDLE_FRAMES = [
-    make_raichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1),
-    make_raichu(left_eye=(W, BK), right_eye=(W, BK), tail_variant=0, feet_variant=1),
-    make_raichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=1, feet_variant=1),
-]
-
-RAICHU_THINKING_SP = make_raichu(left_eye=(W, BK), right_eye=(W, BK), tail_variant=1, feet_variant=0)
-RAICHU_STAGING_SP = RAICHU_THINKING_SP
-RAICHU_COMMITTED_SP = make_raichu(left_eye=(BK, W), right_eye=(OR, DY), tail_variant=1, feet_variant=0)
-RAICHU_RECOVERED_SP = make_raichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1)
-RAICHU_HIT_SP = make_raichu(left_eye=(OR, DY), right_eye=(OR, DY), tail_variant=0, feet_variant=1)
-RAICHU_COMPACTED_SP = make_raichu(left_eye=(OR, DY), right_eye=(OR, DY), tail_variant=0, feet_variant=0)
-
-
-# ============================================================
-# Shiny Pichu variants
-# ============================================================
-
-def make_shiny_pichu(left_eye=(BK, W), right_eye=(BK, W),
-                     tail_variant=0, feet_variant=0):
-    """Shiny Pichu — same as regular (already yellowish)."""
-    grid = make_pichu(left_eye, right_eye, tail_variant, feet_variant)
-    # Swap palette: Y→SY, LY→SLY, DY→SDY
-    COLOR_MAP = {Y: SY, LY: SLY, DY: SDY}
-    for r in range(len(grid)):
-        for c in range(len(grid[r])):
-            if grid[r][c] in COLOR_MAP:
-                grid[r][c] = COLOR_MAP[grid[r][c]]
-    return grid
-
-
-SHINY_PICHU_IDLE_FRAMES = [
-    make_shiny_pichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1),
-    make_shiny_pichu(left_eye=(W, BK), right_eye=(W, BK), tail_variant=0, feet_variant=1),
-    make_shiny_pichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=1, feet_variant=1),
-]
-
-SHINY_PICHU_THINKING_SP = make_shiny_pichu(left_eye=(W, BK), right_eye=(W, BK), tail_variant=1, feet_variant=0)
-SHINY_PICHU_STAGING_SP = SHINY_PICHU_THINKING_SP
-SHINY_PICHU_COMMITTED_SP = make_shiny_pichu(left_eye=(BK, W), right_eye=(SY, SDY), tail_variant=1, feet_variant=0)
-SHINY_PICHU_RECOVERED_SP = make_shiny_pichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1)
-SHINY_PICHU_HIT_SP = make_shiny_pichu(left_eye=(SY, SDY), right_eye=(SY, SDY), tail_variant=0, feet_variant=1)
-SHINY_PICHU_COMPACTED_SP = make_shiny_pichu(left_eye=(SY, SDY), right_eye=(SY, SDY), tail_variant=0, feet_variant=0)
-
-
-# ============================================================
-# Shiny Raichu variants
-# ============================================================
-
-def make_shiny_raichu(left_eye=(BK, W), right_eye=(BK, W),
-                      tail_variant=0, feet_variant=0):
-    """Shiny Raichu — golden/tan palette swap."""
-    grid = make_raichu(left_eye, right_eye, tail_variant, feet_variant)
-    # Swap palette: OR→SOR, LY→SLY2, DY→SOR2
-    COLOR_MAP = {OR: SOR, LY: SLY2, DY: SOR2}
-    for r in range(len(grid)):
-        for c in range(len(grid[r])):
-            if grid[r][c] in COLOR_MAP:
-                grid[r][c] = COLOR_MAP[grid[r][c]]
-    return grid
-
-
-SHINY_RAICHU_IDLE_FRAMES = [
-    make_shiny_raichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1),
-    make_shiny_raichu(left_eye=(W, BK), right_eye=(W, BK), tail_variant=0, feet_variant=1),
-    make_shiny_raichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=1, feet_variant=1),
-]
-
-SHINY_RAICHU_THINKING_SP = make_shiny_raichu(left_eye=(W, BK), right_eye=(W, BK), tail_variant=1, feet_variant=0)
-SHINY_RAICHU_STAGING_SP = SHINY_RAICHU_THINKING_SP
-SHINY_RAICHU_COMMITTED_SP = make_shiny_raichu(left_eye=(BK, W), right_eye=(SOR, SOR2), tail_variant=1, feet_variant=0)
-SHINY_RAICHU_RECOVERED_SP = make_shiny_raichu(left_eye=(BK, W), right_eye=(BK, W), tail_variant=0, feet_variant=1)
-SHINY_RAICHU_HIT_SP = make_shiny_raichu(left_eye=(SOR, SOR2), right_eye=(SOR, SOR2), tail_variant=0, feet_variant=1)
-SHINY_RAICHU_COMPACTED_SP = make_shiny_raichu(left_eye=(SOR, SOR2), right_eye=(SOR, SOR2), tail_variant=0, feet_variant=0)
-
-
 # ============================================================
 # Pokemon species registry — maps species key to sprites
 # ============================================================
@@ -521,3 +546,11 @@ def get_species_sprites(species="pikachu", shiny=False):
         "hit": spec.get(f"{prefix}hit", spec["hit"]),
         "compacted": spec.get(f"{prefix}compacted", spec["compacted"]),
     }
+
+
+# ============================================================
+# Backwards-compat aliases (used by demo.py / animator.py)
+# ============================================================
+
+THINK_FRAMES = IDLE_FRAMES
+COMPACT_FRAME = COMPACTED_SP
