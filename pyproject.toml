@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-pikabar"
-version = "0.3.1"
+version = "0.3.2"
 description = "Pokemon-style statusline for Claude Code — Pikachu reacts to your session"
 readme = "README.md"
 license = "MIT"
